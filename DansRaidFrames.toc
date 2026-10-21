@@ -2,7 +2,7 @@
 ## Title: Dan's Raid Frames
 ## Notes: Quick controls for Blizzard's party and raid frames: resize, rearrange and move them without opening Edit Mode.
 ## Author: Daniel
-## Version: 0.2.0
+## Version: 1.0.0
 ## IconTexture: Interface\Icons\Spell_Holy_PrayerOfHealing
 ## Category: User Interface
 ## Category-deDE: Benutzeroberfläche
