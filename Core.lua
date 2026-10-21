@@ -205,6 +205,22 @@ end
 
 local RAID_GROUP_GAP = 6
 
+-- Rounds a size in a frame's UI units to a whole number of screen pixels. At UI scales that don't
+-- map units to whole pixels (e.g. 0.64 at 1440p: 1 unit = 1.2 px), a 72-unit frame is 86.4 px, and
+-- identical frames get drawn 86 or 87 px wide depending on where their edges fall. With whole-pixel
+-- sizes every edge shares the same sub-pixel offset, so all frames round the same way.
+local function SnapToPixels(size, frame)
+    local _, physH = GetPhysicalScreenSize()
+    if not frame or not physH or physH <= 0 then
+        return size
+    end
+    local pixelsPerUnit = frame:GetEffectiveScale() * physH / 768
+    if pixelsPerUnit <= 0 then
+        return size
+    end
+    return math.max(1, math.floor(size * pixelsPerUnit + 0.5)) / pixelsPerUnit
+end
+
 -- Frame-group sizes, shared by the layout code below and by the unlock-mode outline
 -- (ns.GetFullGroupSize) so the outline always matches what a full group would look like.
 local function GetRaidGroupTitleHeight(groupFrame, groupName)
@@ -230,6 +246,8 @@ end
 
 local function ApplyLiveToRaidFrames(w, h, horiz, border, alpha)
     local container = _G["CompactRaidFrameContainer"]
+    w, h = SnapToPixels(w, container), SnapToPixels(h, container)
+    local gap = SnapToPixels(RAID_GROUP_GAP, container)
 
     -- 1. Grouped raid frames (CompactRaidGroup1..8 and their Member1..5)
     local shownGroups = {}
@@ -289,9 +307,9 @@ local function ApplyLiveToRaidFrames(w, h, horiz, border, alpha)
             else
                 local prevGroup = shownGroups[idx - 1]
                 if horiz then
-                    groupFrame:SetPoint("TOPLEFT", prevGroup, "BOTTOMLEFT", 0, -RAID_GROUP_GAP)
+                    groupFrame:SetPoint("TOPLEFT", prevGroup, "BOTTOMLEFT", 0, -gap)
                 else
-                    groupFrame:SetPoint("TOPLEFT", prevGroup, "TOPRIGHT", RAID_GROUP_GAP, 0)
+                    groupFrame:SetPoint("TOPLEFT", prevGroup, "TOPRIGHT", gap, 0)
                 end
             end
         end
@@ -320,9 +338,9 @@ local function ApplyLiveToRaidFrames(w, h, horiz, border, alpha)
             elseif (idx - 1) % 5 == 0 then
                 local firstInPrevGroup = shownCombined[idx - 5]
                 if horiz then
-                    rf:SetPoint("TOPLEFT", firstInPrevGroup, "BOTTOMLEFT", 0, -RAID_GROUP_GAP)
+                    rf:SetPoint("TOPLEFT", firstInPrevGroup, "BOTTOMLEFT", 0, -gap)
                 else
-                    rf:SetPoint("TOPLEFT", firstInPrevGroup, "TOPRIGHT", RAID_GROUP_GAP, 0)
+                    rf:SetPoint("TOPLEFT", firstInPrevGroup, "TOPRIGHT", gap, 0)
                 end
             else
                 local prev = shownCombined[idx - 1]
@@ -419,6 +437,7 @@ local function ApplyLiveToAllFrames()
     if not cpf then
         return
     end
+    w, h = SnapToPixels(w, cpf), SnapToPixels(h, cpf)
 
     DisableMouseOnDecoration(cpf)
     if ns.db.partyPos and ns.db.partyPos.x and ns.db.partyPos.y and not ns.UsesEditModePositions() then
@@ -558,10 +577,13 @@ end
 -- Unlock mode outlines this so you see the whole footprint, not just who's in the group right now.
 function ns.GetFullGroupSize(mode)
     local w, h, horiz, border = ResolveLiveProfile(ns.GetProfile(mode), ns.GetSizeRanges())
-    local gaps = RAID_GROUP_GAP * (RAID_GROUPS - 1)
+    -- Same whole-pixel rounding as the layout code, so the outline matches the drawn frames.
+    local container = (mode == "raid") and _G["CompactRaidFrameContainer"] or _G["CompactPartyFrame"]
+    w, h = SnapToPixels(w, container), SnapToPixels(h, container)
+    local gaps = SnapToPixels(RAID_GROUP_GAP, container) * (RAID_GROUPS - 1)
 
     if mode ~= "raid" then
-        local cpf = _G["CompactPartyFrame"]
+        local cpf = container
         local titleH = (cpf and cpf.title and cpf.title:IsShown() and cpf.title:GetHeight()) or 0
         return GetPartyContainerSize(w, h, horiz, border, titleH)
     end
@@ -1149,6 +1171,32 @@ local function PrintHelp()
     end
 end
 
+-- /drf debug (not listed in help): the party frames' real sizes and positions, in UI units and in
+-- screen pixels, to tell pixel rounding apart from frames that really have different sizes.
+local function PrintDebugInfo()
+    local _, physH = GetPhysicalScreenSize()
+    physH = (physH and physH > 0) and physH or 768
+    ns.Print(("UI scale %.4f, screen height %d px"):format(UIParent:GetEffectiveScale(), physH))
+    local prof = ns.GetProfile("party")
+    DEFAULT_CHAT_FRAME:AddMessage(("  party profile: %s x %s"):format(tostring(prof.frameWidth), tostring(prof.frameHeight)))
+
+    local shown = 0
+    for i, name in ipairs(PARTY_MEMBER_NAMES) do
+        local f = _G[name]
+        if f and f:IsShown() then
+            shown = shown + 1
+            -- UI units -> screen pixels: units * effective scale * (screen height / 768)
+            local toPixels = f:GetEffectiveScale() * physH / 768
+            local w, h = f:GetWidth(), f:GetHeight()
+            DEFAULT_CHAT_FRAME:AddMessage(("  member %d: %.2f x %.2f units = %.2f x %.2f px, left %.2f px, top %.2f px"):format(
+                i, w, h, w * toPixels, h * toPixels, (f:GetLeft() or 0) * toPixels, (f:GetTop() or 0) * toPixels))
+        end
+    end
+    if shown == 0 then
+        DEFAULT_CHAT_FRAME:AddMessage("  no party frames shown (join a group, or right-click > Unlock Frames while solo)")
+    end
+end
+
 local function HandleSlash(msg)
     msg = strlower(strtrim(msg or ""))
     local cmd, arg1, arg2 = strsplit(" ", msg)
@@ -1176,6 +1224,8 @@ local function HandleSlash(msg)
         ns.OpenOptions()
     elseif cmd == "help" or cmd == "?" then
         PrintHelp()
+    elseif cmd == "debug" then
+        PrintDebugInfo()
     else
         ns.Print("Unknown command. Type |cffffff00/drf help|r for the list.")
     end
