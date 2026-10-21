@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="media/logo.webp" alt="Simple Raid Frames logo" width="320">
+  <img src="media/logo.webp" alt="Dan's Raid Frames logo" width="320">
 </p>
 
-# Simple Raid Frames
+# Dan's Raid Frames
 
 Quick controls for Blizzard's party and raid frames: resize, rearrange and move them without opening Edit Mode.
 
-Simple Raid Frames doesn't replace the default frames. It gives you one place to set up Blizzard's own party and raid frames, and lets you move and resize them straight from the frames.
+Dan's Raid Frames doesn't replace the default frames. It gives you one place to set up Blizzard's own party and raid frames, and lets you move and resize them straight from the frames.
 
 ## Features
 
@@ -18,7 +18,7 @@ Simple Raid Frames doesn't replace the default frames. It gives you one place to
 - **Party alignment:** the party frame always has room for 5, and you choose whether members sit
   left, centered or right (top, center or bottom when vertical). A 2-player group stays centered.
 - **Works with Edit Mode:** settings and positions are saved into your active Edit Mode layout,
-  so Edit Mode and Simple Raid Frames always agree.
+  so Edit Mode and Dan's Raid Frames always agree.
 - **Shortcut to Blizzard's Raid Frame options** (power bars, class colors, debuffs, health text…),
   so those aren't duplicated.
 
@@ -27,13 +27,13 @@ Simple Raid Frames doesn't replace the default frames. It gives you one place to
 1. Download the latest version: **Code → Download ZIP** on this page.
 2. Extract it into your AddOns folder, for example
    `World of Warcraft\_retail_\Interface\AddOns\`.
-3. **Rename the folder to `SimpleRaidFrames`**. GitHub names it `Simple-Raid-Frames-main`,
+3. **Rename the folder to `DansRaidFrames`**. GitHub names it after the repository plus `-main`,
    and WoW only loads the addon if the folder matches its name.
 4. Restart the game or type `/reload`.
 
 ## Usage
 
-Open the options with `/srf`, from **Esc → Options → AddOns → Simple Raid Frames**,
+Open the options with `/drf`, from **Esc → Options → AddOns → Dan's Raid Frames**,
 or by left-clicking the addon in the minimap's addon menu.
 
 ### Moving and resizing frames
@@ -43,26 +43,26 @@ or by left-clicking the addon in the minimap's addon menu.
 3. Right-click the outline to lock them again.
 
 Frames lock automatically when you enter combat.
-While solo, use `/srf unlock` or right-click the addon in the minimap's addon menu.
+While solo, use `/drf unlock` or right-click the addon in the minimap's addon menu.
 
 ### Slash commands
 
 | Command | What it does |
 | --- | --- |
-| `/srf` | Open the options |
-| `/srf unlock [party\|raid]` | Unlock frames to move them (same as the right-click menu) |
-| `/srf lock` | Lock the frames again |
-| `/srf on` / `off` / `toggle` | Show raid-style frames in groups |
-| `/srf width <n>` / `height <n>` / `size <w> <h>` | Frame size, for the Party or Raid page you used last |
-| `/srf reset` | Reset that page's settings to defaults |
-| `/srf resetpos` | Put the frames back in their default spot (with Edit Mode, use its **Reset Position**) |
-| `/srf help` | List all commands in chat |
+| `/drf` | Open the options |
+| `/drf unlock [party\|raid]` | Unlock frames to move them (same as the right-click menu) |
+| `/drf lock` | Lock the frames again |
+| `/drf on` / `off` / `toggle` | Show raid-style frames in groups |
+| `/drf width <n>` / `height <n>` / `size <w> <h>` | Frame size, for the Party or Raid page you used last |
+| `/drf reset` | Reset that page's settings to defaults |
+| `/drf resetpos` | Put the frames back in their default spot (with Edit Mode, use its **Reset Position**) |
+| `/drf help` | List all commands in chat |
 
 ## Good to know
 
 - **Edit Mode layouts:** changes are saved into the Edit Mode layout you have selected.
   Blizzard's preset layouts (Modern, Classic) can't be edited, so if one of them is active,
-  the addon creates its own layout, `SimpleRaidFramesModern`, and switches to it.
+  the addon creates its own layout, `DansRaidFrames`, and switches to it.
 - **Display options** like power bars, class colors and debuffs stay in Blizzard's
   **Options → Gameplay → Interface → Raid Frames**. The addon's options page has a button that opens it.
 - **Taint-safe by design:** the addon only uses plain frame methods (size, position, visibility)

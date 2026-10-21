@@ -1,4 +1,4 @@
--- Options UI for Simple Raid Frames (Esc > Options > AddOns > Simple Raid Frames, opened via /srf).
+-- Options UI for Dan's Raid Frames (Esc > Options > AddOns > Dan's Raid Frames, opened via /drf).
 -- Uses genuine Blizzard stock templates inside the native Options canvas:
 --   * SettingsCheckboxTemplate (stock modern checkboxes with row hover highlight)
 --   * WowStyle1DropdownTemplate (stock modern dropdown button; popup handled privately to avoid Blizzard_Menu pool taint)
@@ -7,7 +7,7 @@
 
 local _, ns = ...
 
-local PANEL_NAME = "Simple Raid Frames"
+local PANEL_NAME = "Dan's Raid Frames"
 
 local ROW_HEIGHT = 23
 local ROW_GAP = -2
@@ -594,7 +594,7 @@ local function CreateBlizzardOptionsButton(parent)
 end
 
 local MOVE_HINT = "To move or resize frames, right-click a party or raid frame and choose |cffffd100Unlock Frames|r."
-    .. " Right-click the outline to lock them again. Type |cffffd100/srf help|r for all commands."
+    .. " Right-click the outline to lock them again. Type |cffffd100/drf help|r for all commands."
 
 -- Short explanation of how to move frames (unlocking happens from the frames' right-click menu).
 local function CreateMoveHint(parent)
@@ -613,7 +613,7 @@ end
 
 local panels = {}
 
--- Builds the Root overview panel shown when clicking "Simple Raid Frames" directly in the left AddOn list.
+-- Builds the Root overview panel shown when clicking "Dan's Raid Frames" directly in the left AddOn list.
 local function BuildRootPanel(panel)
     local view = {}
 
@@ -623,7 +623,7 @@ local function BuildRootPanel(panel)
 
     local subtitle = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
-    subtitle:SetText("Click |cffffd100[+]|r next to Simple Raid Frames on the left to configure |cffffd100Party Frames|r and |cffffd100Raid Frames|r separately.")
+    subtitle:SetText("Click |cffffd100[+]|r next to Dan's Raid Frames on the left to configure |cffffd100Party Frames|r and |cffffd100Raid Frames|r separately.")
 
     local visHeader = CreateSectionHeader(panel, "General & Visibility")
     visHeader:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", 0, -12)
@@ -961,7 +961,7 @@ function ns.OpenOptions()
     return false
 end
 
-function SimpleRaidFrames_OnAddonCompartmentClick(_, mouseButton)
+function DansRaidFrames_OnAddonCompartmentClick(_, mouseButton)
     if mouseButton == "RightButton" then
         ns.SetUnlocked(not ns.IsUnlocked())
     else
@@ -969,7 +969,7 @@ function SimpleRaidFrames_OnAddonCompartmentClick(_, mouseButton)
     end
 end
 
-function SimpleRaidFrames_OnAddonCompartmentEnter(_, menuButtonFrame)
+function DansRaidFrames_OnAddonCompartmentEnter(_, menuButtonFrame)
     GameTooltip:SetOwner(menuButtonFrame or UIParent, menuButtonFrame and "ANCHOR_LEFT" or "ANCHOR_CURSOR")
     GameTooltip:SetText(PANEL_NAME)
     GameTooltip:AddLine("Left-click: open options", 1, 1, 1)
@@ -977,6 +977,6 @@ function SimpleRaidFrames_OnAddonCompartmentEnter(_, menuButtonFrame)
     GameTooltip:Show()
 end
 
-function SimpleRaidFrames_OnAddonCompartmentLeave()
+function DansRaidFrames_OnAddonCompartmentLeave()
     GameTooltip:Hide()
 end

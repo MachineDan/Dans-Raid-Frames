@@ -389,7 +389,7 @@ local function AddUnlockMenuEntry(owner, rootDescription, contextData)
         return
     end
     rootDescription:CreateDivider()
-    rootDescription:CreateTitle("Simple Raid Frames")
+    rootDescription:CreateTitle("Dan's Raid Frames")
     if unlockedMode then
         rootDescription:CreateButton("Lock Frames", function()
             ns.SetUnlocked(false)

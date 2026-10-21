@@ -1,4 +1,4 @@
--- SimpleRaidFrames: Quick-access "/srf" window for all the Raid & Party Frame
+-- Dan's Raid Frames: Quick-access "/drf" window for all the Raid & Party Frame
 -- options buried inside Blizzard's Edit Mode, with live 60 FPS resizing and zero 12.0 taint.
 --
 -- Party Frames and Raid Frames each have their own profile (ns.db.party / ns.db.raid).
@@ -40,8 +40,8 @@ local GLOBAL_KEYS = {
     raidPos = true,
 }
 
-local LAYOUT_NAME = "SimpleRaidFramesModern"
-local PREFIX = "|cff33ff99Simple Raid Frames|r: "
+local LAYOUT_NAME = "DansRaidFrames"
+local PREFIX = "|cff33ff99Dan's Raid Frames|r: "
 
 -- Blizzard's Edit Mode slider limits for raid-style party/raid frames: { min, max, step }.
 local RANGES = {
@@ -1064,34 +1064,34 @@ local function InstallSafeHooks()
 end
 
 local function Initialize()
-    SimpleRaidFramesDB = SimpleRaidFramesDB or {}
+    DansRaidFramesDB = DansRaidFramesDB or {}
     for key, value in pairs(DEFAULTS) do
-        if SimpleRaidFramesDB[key] == nil then
-            SimpleRaidFramesDB[key] = value
+        if DansRaidFramesDB[key] == nil then
+            DansRaidFramesDB[key] = value
         end
     end
     -- Raid-style frames must stay active by default
-    if SimpleRaidFramesDB.showRaidFramesInGroups == false then
-        SimpleRaidFramesDB.showRaidFramesInGroups = true
+    if DansRaidFramesDB.showRaidFramesInGroups == false then
+        DansRaidFramesDB.showRaidFramesInGroups = true
     end
     -- Replaced by unlock mode, which shows the frames while solo only while you position them.
-    SimpleRaidFramesDB.showWhenSolo = nil
+    DansRaidFramesDB.showWhenSolo = nil
     for _, mode in ipairs({ "party", "raid" }) do
-        if type(SimpleRaidFramesDB[mode]) ~= "table" then
-            SimpleRaidFramesDB[mode] = {}
+        if type(DansRaidFramesDB[mode]) ~= "table" then
+            DansRaidFramesDB[mode] = {}
         end
-        local prof = SimpleRaidFramesDB[mode]
+        local prof = DansRaidFramesDB[mode]
         for key, defaultVal in pairs(PROFILE_DEFAULTS) do
             if prof[key] == nil then
-                if SimpleRaidFramesDB[key] ~= nil then
-                    prof[key] = SimpleRaidFramesDB[key]
+                if DansRaidFramesDB[key] ~= nil then
+                    prof[key] = DansRaidFramesDB[key]
                 else
                     prof[key] = defaultVal
                 end
             end
         end
     end
-    ns.db = SimpleRaidFramesDB
+    ns.db = DansRaidFramesDB
 
     local ok, err = pcall(ns.CreateOptions)
     if not ok then
@@ -1110,7 +1110,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         DropPositionsOwnedByEditMode()
         InstallSafeHooks()
         ScheduleLiveVisuals()
-        ns.Print("loaded. Type |cffffff00/srf|r to configure your raid & party frames, |cffffff00/srf help|r for commands.")
+        ns.Print("loaded. Type |cffffff00/drf|r to configure your raid & party frames, |cffffff00/drf help|r for commands.")
     elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
         ScheduleLiveVisuals()
         if ns.RefreshOptions then
@@ -1131,15 +1131,15 @@ end)
 local HELP_LINES = {
     "|cffffd100Moving frames:|r right-click a party or raid frame and choose |cffffd100Unlock Frames|r."
         .. " Drag the outline to move, drag its corner to resize, right-click it to lock.",
-    "|cffffd100/srf|r - open the options",
-    "|cffffd100/srf unlock|r [party|raid] - unlock frames to move them (same as the right-click menu)",
-    "|cffffd100/srf lock|r - lock the frames again",
-    "|cffffd100/srf on|r | |cffffd100off|r | |cffffd100toggle|r - show raid-style frames in groups",
-    "|cffffd100/srf width|r <n> | |cffffd100height|r <n> | |cffffd100size|r <w> <h>"
+    "|cffffd100/drf|r - open the options",
+    "|cffffd100/drf unlock|r [party|raid] - unlock frames to move them (same as the right-click menu)",
+    "|cffffd100/drf lock|r - lock the frames again",
+    "|cffffd100/drf on|r | |cffffd100off|r | |cffffd100toggle|r - show raid-style frames in groups",
+    "|cffffd100/drf width|r <n> | |cffffd100height|r <n> | |cffffd100size|r <w> <h>"
         .. " - frame size, for the Party or Raid page you used last",
-    "|cffffd100/srf reset|r - reset that page's settings to defaults",
-    "|cffffd100/srf resetpos|r - put the frames back in their default spot",
-    "|cffffd100/srf help|r - show this list",
+    "|cffffd100/drf reset|r - reset that page's settings to defaults",
+    "|cffffd100/drf resetpos|r - put the frames back in their default spot",
+    "|cffffd100/drf help|r - show this list",
 }
 
 local function PrintHelp()
@@ -1177,10 +1177,10 @@ local function HandleSlash(msg)
     elseif cmd == "help" or cmd == "?" then
         PrintHelp()
     else
-        ns.Print("Unknown command. Type |cffffff00/srf help|r for the list.")
+        ns.Print("Unknown command. Type |cffffff00/drf help|r for the list.")
     end
 end
 
-SLASH_SIMPLERAIDFRAMES1 = "/srf"
-SLASH_SIMPLERAIDFRAMES2 = "/simpleraidframes"
-SlashCmdList["SIMPLERAIDFRAMES"] = HandleSlash
+SLASH_DANSRAIDFRAMES1 = "/drf"
+SLASH_DANSRAIDFRAMES2 = "/dansraidframes"
+SlashCmdList["DANSRAIDFRAMES"] = HandleSlash
