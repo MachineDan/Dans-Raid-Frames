@@ -1,6 +1,6 @@
 ## Interface: 16001, 11509, 50504, 120100
 ## Title: Simple Raid Frames
-## Notes: Quick access to Party & Raid Frame options in Edit Mode.
+## Notes: Quick controls for Blizzard's party and raid frames: resize, rearrange and move them without opening Edit Mode.
 ## Author: Daniel
 ## Version: 0.2.0
 ## IconTexture: Interface\Icons\Spell_Holy_PrayerOfHealing
