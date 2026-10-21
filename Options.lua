@@ -21,6 +21,13 @@ local ORIENTATION_OPTIONS = {
     { value = true,  label = "Horizontal" },
 }
 
+-- Where the members sit inside the party frame's 5 slots (Top/Center/Bottom for vertical groups).
+local ALIGNMENT_OPTIONS = {
+    { value = 0, label = "Left / Top" },
+    { value = 1, label = "Center" },
+    { value = 2, label = "Right / Bottom" },
+}
+
 local SORT_OPTIONS = {
     { value = 0, label = "Role" },
     { value = 1, label = "Group" },
@@ -433,10 +440,6 @@ local function CreatePreviewBox(parent, fixedMode)
     local orientLabel = box:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     orientLabel:SetPoint("TOP", sizeLabel, "BOTTOM", 0, -3)
 
-    local moveHintLabel = box:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    moveHintLabel:SetPoint("TOP", orientLabel, "BOTTOM", 0, -4)
-    moveHintLabel:SetText("|cff88ddffHold Ctrl + Drag frames to move|r")
-
     local unitFrame = CreateFrame("Frame", nil, box)
     unitFrame:SetPoint("CENTER", 0, 6)
     unitFrame:SetSize(72, 36)
@@ -560,6 +563,54 @@ local function CreatePreviewBox(parent, fixedMode)
     return box
 end
 
+-- Opens Blizzard's Options > Gameplay > Interface scrolled to its Raid Frames section, which holds
+-- the display options this addon deliberately doesn't duplicate (power bars, debuffs, health text...).
+local function OpenBlizzardRaidFrameOptions()
+    if Settings and Settings.OpenToCategory and Settings.INTERFACE_CATEGORY_ID then
+        Settings.OpenToCategory(Settings.INTERFACE_CATEGORY_ID, RAID_FRAMES_LABEL)
+    else
+        ns.Print("Open Options > Gameplay > Interface > Raid Frames.")
+    end
+end
+
+local function CreateBlizzardOptionsButton(parent)
+    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    button:SetSize(210, 24)
+    button:SetText("Blizzard Raid Frame Options")
+    button:SetScript("OnClick", function()
+        PlayClickSound(true)
+        OpenBlizzardRaidFrameOptions()
+    end)
+    button:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Blizzard Raid Frame Options")
+        GameTooltip:AddLine("Opens Options > Gameplay > Interface > Raid Frames: power bars, class colors, pets, debuffs, dispel indicators and health text.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    return button
+end
+
+local MOVE_HINT = "To move or resize frames, right-click a party or raid frame and choose |cffffd100Unlock Frames|r."
+    .. " Right-click the outline to lock them again. Type |cffffd100/srf help|r for all commands."
+
+-- Short explanation of how to move frames (unlocking happens from the frames' right-click menu).
+local function CreateMoveHint(parent)
+    local hint = CreateFrame("Frame", nil, parent)
+    hint:SetSize(LEFT_COL_WIDTH, 44)
+
+    local text = hint:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    text:SetPoint("TOPLEFT", 10, -4)
+    text:SetWidth(LEFT_COL_WIDTH - 20)
+    text:SetJustifyH("LEFT")
+    text:SetWordWrap(true)
+    text:SetText(MOVE_HINT)
+
+    return hint
+end
+
 local panels = {}
 
 -- Builds the Root overview panel shown when clicking "Simple Raid Frames" directly in the left AddOn list.
@@ -582,13 +633,11 @@ local function BuildRootPanel(panel)
     end)
     cbRaidStyle:SetPoint("TOPLEFT", visHeader, "BOTTOMLEFT", 0, -4)
 
-    local cbSolo = CreateStockCheckbox(panel, "Show Frames When Solo (Preview)", function(checked)
-        ns.SetOption("showWhenSolo", checked)
-    end)
-    cbSolo:SetPoint("TOPLEFT", cbRaidStyle, "BOTTOMLEFT", 0, ROW_GAP)
+    local moveHint = CreateMoveHint(panel)
+    moveHint:SetPoint("TOPLEFT", cbRaidStyle, "BOTTOMLEFT", 0, ROW_GAP)
 
     local profilesHeader = CreateSectionHeader(panel, "Frame Profiles (Expand [+] on Left Sidebar to Edit)")
-    profilesHeader:SetPoint("TOPLEFT", cbSolo, "BOTTOMLEFT", 0, -14)
+    profilesHeader:SetPoint("TOPLEFT", moveHint, "BOTTOMLEFT", 0, -8)
 
     local partyPreview = CreatePreviewBox(panel, "party")
     partyPreview:SetPoint("TOPLEFT", profilesHeader, "BOTTOMLEFT", 6, -10)
@@ -596,12 +645,14 @@ local function BuildRootPanel(panel)
     local raidPreview = CreatePreviewBox(panel, "raid")
     raidPreview:SetPoint("TOPLEFT", partyPreview, "TOPRIGHT", 24, 0)
 
+    local blizzardButton = CreateBlizzardOptionsButton(panel)
+    blizzardButton:SetPoint("TOPLEFT", partyPreview, "BOTTOMLEFT", 0, -12)
+
     function view:Refresh()
         if not ns.db then
             return
         end
         cbRaidStyle:SetChecked(ns.db.showRaidFramesInGroups)
-        cbSolo:SetChecked(ns.db.showWhenSolo)
         self:UpdatePreview()
     end
 
@@ -631,7 +682,7 @@ local function BuildModePanel(panel, mode)
 
     local subtitle = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
-    subtitle:SetText(("Settings for %s.  |cff88ddffHold Ctrl + Left-Click & Drag frames to move.|r"):format(modeLabel))
+    subtitle:SetText(("Settings for %s."):format(modeLabel))
 
     local statusText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 
@@ -658,14 +709,12 @@ local function BuildModePanel(panel, mode)
     end)
     cbRaidStyle:SetPoint("TOPLEFT", visHeader, "BOTTOMLEFT", 0, -4)
 
-    local cbSolo = CreateStockCheckbox(panel, "Show Frames When Solo (Preview)", function(checked)
-        SetModeOption("showWhenSolo", checked)
-    end)
-    cbSolo:SetPoint("TOPLEFT", cbRaidStyle, "BOTTOMLEFT", 0, ROW_GAP)
+    local moveHint = CreateMoveHint(panel)
+    moveHint:SetPoint("TOPLEFT", cbRaidStyle, "BOTTOMLEFT", 0, ROW_GAP)
 
     -- Section 2: Layout & Appearance
     local layoutHeader = CreateSectionHeader(panel, "Layout & Appearance — " .. modeLabel)
-    layoutHeader:SetPoint("TOPLEFT", cbSolo, "BOTTOMLEFT", 0, SECTION_GAP)
+    layoutHeader:SetPoint("TOPLEFT", moveHint, "BOTTOMLEFT", 0, SECTION_GAP)
 
     local orientDropdown = CreateStockDropdown(panel, "Group Orientation", ORIENTATION_OPTIONS, function()
         local prof = ns.GetProfile(mode)
@@ -675,13 +724,27 @@ local function BuildModePanel(panel, mode)
     end)
     orientDropdown:SetPoint("TOPLEFT", layoutHeader, "BOTTOMLEFT", 0, -4)
 
+    -- Party only: raid groups already lay out their own 5 slots.
+    local alignDropdown
+    local rowAboveSort = orientDropdown
+    if not isRaid then
+        alignDropdown = CreateStockDropdown(panel, "Alignment", ALIGNMENT_OPTIONS, function()
+            local prof = ns.GetProfile(mode)
+            return prof and prof.alignment or 0
+        end, function(value)
+            SetModeOption("alignment", value)
+        end)
+        alignDropdown:SetPoint("TOPLEFT", orientDropdown, "BOTTOMLEFT", 0, ROW_GAP)
+        rowAboveSort = alignDropdown
+    end
+
     local sortDropdown = CreateStockDropdown(panel, "Sort Players By", SORT_OPTIONS, function()
         local prof = ns.GetProfile(mode)
         return prof and prof.sortBy or 0
     end, function(value)
         SetModeOption("sortBy", value)
     end)
-    sortDropdown:SetPoint("TOPLEFT", orientDropdown, "BOTTOMLEFT", 0, ROW_GAP)
+    sortDropdown:SetPoint("TOPLEFT", rowAboveSort, "BOTTOMLEFT", 0, ROW_GAP)
 
     local templateDropdown = CreateStockDropdown(panel, "Template", TEMPLATE_OPTIONS, function()
         local prof = ns.GetProfile(mode)
@@ -772,7 +835,11 @@ local function BuildModePanel(panel, mode)
         ShowSavedStatus()
     end)
 
-    statusText:SetPoint("TOP", previewBox, "BOTTOM", 0, -42)
+    local blizzardButton = CreateBlizzardOptionsButton(panel)
+    blizzardButton:SetPoint("TOPLEFT", previewBox, "BOTTOMLEFT", 0, -40)
+    blizzardButton:SetPoint("TOPRIGHT", previewBox, "BOTTOMRIGHT", 0, -40)
+
+    statusText:SetPoint("TOP", blizzardButton, "BOTTOM", 0, -8)
     statusText:SetText("")
 
     function view:Refresh()
@@ -784,8 +851,10 @@ local function BuildModePanel(panel, mode)
         local width, height = ns.GetSize(mode)
 
         cbRaidStyle:SetChecked(ns.db.showRaidFramesInGroups)
-        cbSolo:SetChecked(ns.db.showWhenSolo)
         orientDropdown:Refresh()
+        if alignDropdown then
+            alignDropdown:Refresh()
+        end
         sortDropdown:Refresh()
         templateDropdown:Refresh()
         cbBorder:SetChecked(prof.displayBorder)
@@ -894,8 +963,20 @@ end
 
 function SimpleRaidFrames_OnAddonCompartmentClick(_, mouseButton)
     if mouseButton == "RightButton" then
-        ns.ToggleShowWhenSolo()
+        ns.SetUnlocked(not ns.IsUnlocked())
     else
         ns.OpenOptions()
     end
+end
+
+function SimpleRaidFrames_OnAddonCompartmentEnter(_, menuButtonFrame)
+    GameTooltip:SetOwner(menuButtonFrame or UIParent, menuButtonFrame and "ANCHOR_LEFT" or "ANCHOR_CURSOR")
+    GameTooltip:SetText(PANEL_NAME)
+    GameTooltip:AddLine("Left-click: open options", 1, 1, 1)
+    GameTooltip:AddLine(ns.IsUnlocked() and "Right-click: lock frames" or "Right-click: unlock frames to move them", 1, 1, 1)
+    GameTooltip:Show()
+end
+
+function SimpleRaidFrames_OnAddonCompartmentLeave()
+    GameTooltip:Hide()
 end

@@ -18,6 +18,7 @@ local PROFILE_DEFAULTS = {
     useHorizontalGroups = false,
     displayBorder = false,
     sortBy = 0, -- 0 = Role, 1 = Group, 2 = Alphabetical
+    alignment = 0, -- party only: 0 = Left/Top, 1 = Center, 2 = Right/Bottom within the 5 slots
     auraOrganizationType = 0, -- 0 = Legacy, 1 = Buffs Top, 2 = Buffs Bottom
     frameWidth = 72,
     frameHeight = 36,
@@ -30,19 +31,16 @@ local PROFILE_DEFAULTS = {
 local DEFAULTS = {
     selectedMode = "party", -- "party" or "raid"
     showRaidFramesInGroups = true,
-    showWhenSolo = false,
 }
 
 local GLOBAL_KEYS = {
     selectedMode = true,
     showRaidFramesInGroups = true,
-    showWhenSolo = true,
     partyPos = true,
     raidPos = true,
 }
 
 local LAYOUT_NAME = "SimpleRaidFramesModern"
-local OLD_LAYOUT_NAME = "SimpleRaidFrames"
 local PREFIX = "|cff33ff99Simple Raid Frames|r: "
 
 -- Blizzard's Edit Mode slider limits for raid-style party/raid frames: { min, max, step }.
@@ -62,10 +60,11 @@ local ROLE_WEIGHT = {
     NONE = 4,
 }
 
--- Global names of Blizzard's compact unit frames, built once so the per-frame
--- drag watcher doesn't concatenate strings on every OnUpdate.
+-- Global names of Blizzard's compact unit frames, built once instead of
+-- concatenating strings on every layout pass.
+local PARTY_SLOTS = 5
 local PARTY_MEMBER_NAMES = {}
-for i = 1, 5 do
+for i = 1, PARTY_SLOTS do
     PARTY_MEMBER_NAMES[i] = "CompactPartyFrameMember" .. i
 end
 
@@ -143,168 +142,6 @@ function ns.OpacityToAlpha(opacity)
 end
 
 ---------------------------------------------------------------------------
--- Ctrl + Left-Click Hold Dragging (Pure C++ widget methods, zero taint)
----------------------------------------------------------------------------
-local activeDragTarget = nil
-local activeDragPosKey = nil
-local dragStartCursorX, dragStartCursorY = 0, 0
-local dragStartLeft, dragStartTop = 0, 0
-local dragLastLeft, dragLastTop = nil, nil
-local wasLeftButtonDown = false
-
-local dragHintTooltip = CreateFrame("Frame", nil, UIParent)
-dragHintTooltip:SetFrameStrata("TOOLTIP")
-dragHintTooltip:SetSize(136, 22)
-dragHintTooltip:EnableMouse(false)
-if dragHintTooltip.SetMouseClickEnabled then
-    dragHintTooltip:SetMouseClickEnabled(false)
-end
-if dragHintTooltip.SetMouseMotionEnabled then
-    dragHintTooltip:SetMouseMotionEnabled(false)
-end
-dragHintTooltip:Hide()
-
-do
-    local bg = dragHintTooltip:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(0.05, 0.05, 0.08, 0.92)
-
-    -- 1px border: top, bottom, left, right
-    local EDGES = {
-        { "TOPLEFT", "TOPRIGHT", true },
-        { "BOTTOMLEFT", "BOTTOMRIGHT", true },
-        { "TOPLEFT", "BOTTOMLEFT", false },
-        { "TOPRIGHT", "BOTTOMRIGHT", false },
-    }
-    for _, edge in ipairs(EDGES) do
-        local tex = dragHintTooltip:CreateTexture(nil, "BORDER")
-        tex:SetColorTexture(0.45, 0.45, 0.5, 0.85)
-        tex:SetPoint(edge[1], 0, 0)
-        tex:SetPoint(edge[2], 0, 0)
-        if edge[3] then
-            tex:SetHeight(1)
-        else
-            tex:SetWidth(1)
-        end
-    end
-end
-
-local dragHintText = dragHintTooltip:CreateFontString(nil, "OVERLAY", "GameTooltipTextSmall")
-dragHintText:SetPoint("CENTER", 0, 0)
-dragHintText:SetText("|cff88ddffCtrl + Drag to move|r")
-
-local function GetHoveredUnitFrameDragTarget()
-    local cpf = _G["CompactPartyFrame"]
-    if cpf and cpf:IsShown() then
-        for _, name in ipairs(PARTY_MEMBER_NAMES) do
-            local mf = _G[name]
-            if mf and mf:IsShown() and mf:IsMouseOver() then
-                return cpf, "partyPos"
-            end
-        end
-    end
-
-    local container = _G["CompactRaidFrameContainer"]
-    if container and container:IsShown() then
-        for g, groupName in ipairs(RAID_GROUP_NAMES) do
-            local gf = _G[groupName]
-            if gf and gf:IsShown() then
-                for _, name in ipairs(RAID_GROUP_MEMBER_NAMES[g]) do
-                    local mf = _G[name]
-                    if mf and mf:IsShown() and mf:IsMouseOver() then
-                        return container, "raidPos"
-                    end
-                end
-            end
-        end
-        for _, name in ipairs(RAID_FRAME_NAMES) do
-            local rf = _G[name]
-            if rf and rf:IsShown() and rf:IsMouseOver() then
-                return container, "raidPos"
-            end
-        end
-    end
-
-    return nil, nil
-end
-
--- Shows the "Ctrl + Drag to move" hint just below the unit's GameTooltip.
-local function UpdateDragHint()
-    if GameTooltip and GameTooltip:IsShown() and GameTooltip.GetLeft and GameTooltip.GetBottom then
-        local gLeft, gBottom = GameTooltip:GetLeft(), GameTooltip:GetBottom()
-        if gLeft and gBottom then
-            local w = (dragHintText:GetStringWidth() or 110) + 18
-            dragHintTooltip:SetSize(math.max(120, w), 22)
-            dragHintTooltip:ClearAllPoints()
-            dragHintTooltip:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", gLeft, gBottom - 2)
-            dragHintTooltip:Show()
-            return
-        end
-    end
-    dragHintTooltip:Hide()
-end
-
-local function UpdateDrag(inCombat, leftDown)
-    if activeDragTarget then
-        if inCombat or not leftDown then
-            if activeDragPosKey and dragLastLeft and dragLastTop and ns.db then
-                ns.db[activeDragPosKey] = { x = dragLastLeft, y = dragLastTop }
-            end
-            activeDragTarget, activeDragPosKey = nil, nil
-            dragLastLeft, dragLastTop = nil, nil
-            return
-        end
-
-        local scale = activeDragTarget:GetEffectiveScale()
-        if not scale or scale <= 0 then
-            scale = 1
-        end
-        local curX, curY = GetCursorPosition()
-        dragLastLeft = dragStartLeft + (curX - dragStartCursorX) / scale
-        dragLastTop = dragStartTop + (curY - dragStartCursorY) / scale
-
-        activeDragTarget:ClearAllPoints()
-        activeDragTarget:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", dragLastLeft, dragLastTop)
-        dragHintTooltip:Hide()
-        return
-    end
-
-    if inCombat then
-        dragHintTooltip:Hide()
-        return
-    end
-
-    local hoveredTarget, hoveredPosKey = GetHoveredUnitFrameDragTarget()
-    if not hoveredTarget then
-        dragHintTooltip:Hide()
-        return
-    end
-
-    if leftDown and not wasLeftButtonDown and IsControlKeyDown() then
-        local left = hoveredTarget.GetLeft and hoveredTarget:GetLeft()
-        local top = hoveredTarget.GetTop and hoveredTarget:GetTop()
-        if left and top then
-            dragHintTooltip:Hide()
-            activeDragTarget = hoveredTarget
-            activeDragPosKey = hoveredPosKey
-            dragStartCursorX, dragStartCursorY = GetCursorPosition()
-            dragStartLeft, dragStartTop = left, top
-            dragLastLeft, dragLastTop = left, top
-            return
-        end
-    end
-
-    UpdateDragHint()
-end
-
-local dragWatcher = CreateFrame("Frame")
-dragWatcher:SetScript("OnUpdate", function()
-    local leftDown = IsMouseButtonDown("LeftButton")
-    UpdateDrag(InCombatLockdown(), leftDown)
-    wasLeftButtonDown = leftDown
-end)
-
----------------------------------------------------------------------------
 -- Pure C++ Live Visual Updater (Party & Raid Frames, zero taint)
 ---------------------------------------------------------------------------
 local function PassThroughUnitSubframes(unitFrame)
@@ -368,6 +205,29 @@ end
 
 local RAID_GROUP_GAP = 6
 
+-- Frame-group sizes, shared by the layout code below and by the unlock-mode outline
+-- (ns.GetFullGroupSize) so the outline always matches what a full group would look like.
+local function GetRaidGroupTitleHeight(groupFrame, groupName)
+    local title = groupFrame and (groupFrame.title or _G[groupName .. "Title"])
+    return (title and title.GetHeight and title:GetHeight()) or 14
+end
+
+-- One raid group: 5 members plus its title and border padding.
+local function GetRaidGroupSize(w, h, horiz, border, titleH)
+    return (horiz and (w * 5) or w) + (border and 14 or 0),
+        (horiz and h or (h * 5)) + titleH + (border and 12 or 2)
+end
+
+-- The party container always has room for PARTY_SLOTS members.
+local function GetPartyContainerSize(w, h, horiz, border, titleH)
+    local padW = border and 14 or 0
+    local padH = border and 12 or 0
+    if horiz then
+        return w * PARTY_SLOTS + padW, h + titleH + 4 + padH
+    end
+    return w + padW, h * PARTY_SLOTS + titleH + 4 + padH
+end
+
 local function ApplyLiveToRaidFrames(w, h, horiz, border, alpha)
     local container = _G["CompactRaidFrameContainer"]
 
@@ -377,8 +237,7 @@ local function ApplyLiveToRaidFrames(w, h, horiz, border, alpha)
         local groupFrame = _G[groupName]
         if groupFrame then
             DisableMouseOnDecoration(groupFrame)
-            local title = groupFrame.title or _G[groupName .. "Title"]
-            local titleH = (title and title.GetHeight and title:GetHeight()) or 14
+            local titleH = GetRaidGroupTitleHeight(groupFrame, groupName)
             local padX = border and 7 or 0
             local padY = border and 5 or 0
 
@@ -400,9 +259,7 @@ local function ApplyLiveToRaidFrames(w, h, horiz, border, alpha)
                 end
             end
 
-            local groupW = (horiz and (w * 5) or w) + (border and 14 or 0)
-            local groupH = (horiz and h or (h * 5)) + titleH + (border and 12 or 2)
-            groupFrame:SetSize(groupW, groupH)
+            groupFrame:SetSize(GetRaidGroupSize(w, h, horiz, border, titleH))
 
             local bf = groupFrame.borderFrame or _G[groupName .. "BorderFrame"]
             if bf then
@@ -487,7 +344,7 @@ local function ApplyLiveToRaidFrames(w, h, horiz, border, alpha)
             DisableMouseOnDecoration(container.borderFrame)
             container.borderFrame:SetShown(border)
         end
-        if activeDragTarget ~= container and ns.db and ns.db.raidPos and ns.db.raidPos.x and ns.db.raidPos.y then
+        if ns.db and ns.db.raidPos and ns.db.raidPos.x and ns.db.raidPos.y and not ns.UsesEditModePositions() then
             container:ClearAllPoints()
             container:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", ns.db.raidPos.x, ns.db.raidPos.y)
         end
@@ -536,13 +393,14 @@ local function ResolveLiveProfile(prof, ranges)
         ns.OpacityToAlpha(opacity)
 end
 
-function ns.ApplyLiveVisuals()
+local function ApplyLiveToAllFrames()
     if InCombatLockdown() or not ns.db then
         return
     end
 
     local enabled = ns.db.showRaidFramesInGroups and true or false
-    local solo = ns.db.showWhenSolo and true or false
+    -- While the party frames are unlocked, they stay visible when solo so they can be positioned.
+    local partyUnlocked = ns.GetUnlockedMode and ns.GetUnlockedMode() == "party"
     local inRaid = IsInRaid()
     local inParty = IsInGroup() and not inRaid
     local ranges = ns.GetSizeRanges()
@@ -563,7 +421,7 @@ function ns.ApplyLiveVisuals()
     end
 
     DisableMouseOnDecoration(cpf)
-    if activeDragTarget ~= cpf and ns.db.partyPos and ns.db.partyPos.x and ns.db.partyPos.y then
+    if ns.db.partyPos and ns.db.partyPos.x and ns.db.partyPos.y and not ns.UsesEditModePositions() then
         cpf:ClearAllPoints()
         cpf:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", ns.db.partyPos.x, ns.db.partyPos.y)
     end
@@ -577,7 +435,7 @@ function ns.ApplyLiveVisuals()
     elseif inParty then
         cpf:SetShown(enabled)
     else
-        cpf:SetShown(solo and enabled)
+        cpf:SetShown(partyUnlocked and enabled)
     end
 
     -- 2. Collect and sort CompactPartyFrameMember1..5 using C++ GetAttribute("unit")
@@ -631,6 +489,17 @@ function ns.ApplyLiveVisuals()
     local firstX = border and 7 or 0
     local firstY = -(titleH + (border and 5 or 0))
 
+    -- The container always has room for a full group of 5, so it keeps the same size (and stays
+    -- where Edit Mode centered it) whoever is in the group; alignment places the members inside.
+    local emptySlots = PARTY_SLOTS - numShown
+    local alignment = partyProf.alignment or 0
+    local shift = (alignment == 1 and emptySlots / 2) or (alignment == 2 and emptySlots) or 0
+    if horiz then
+        firstX = firstX + shift * w
+    else
+        firstY = firstY - shift * h
+    end
+
     for pos, item in ipairs(entries) do
         local member = item.frame
         member:SetSize(w, h)
@@ -648,13 +517,7 @@ function ns.ApplyLiveVisuals()
     end
 
     -- 4. Update CompactPartyFrame container size & border frame
-    local padW = border and 14 or 0
-    local padH = border and 12 or 0
-    if horiz then
-        cpf:SetSize(w * numShown + padW, h + titleH + 4 + padH)
-    else
-        cpf:SetSize(w + padW, h * numShown + titleH + 4 + padH)
-    end
+    cpf:SetSize(GetPartyContainerSize(w, h, horiz, border, titleH))
 
     local borderFrame = cpf.borderFrame or _G["CompactPartyFrameBorderFrame"]
     if borderFrame then
@@ -670,12 +533,70 @@ function ns.ApplyLiveVisuals()
     end
 end
 
+local RAID_GROUPS = 8
+
+-- Raid frames are either split into group frames or "combined" into one flow of CompactRaidFrameN.
+-- Outside a raid nothing is shown, so assume groups (Blizzard's default).
+local function RaidUsesCombinedFrames()
+    for _, groupName in ipairs(RAID_GROUP_NAMES) do
+        local groupFrame = _G[groupName]
+        if groupFrame and groupFrame:IsShown() then
+            return false
+        end
+    end
+    for _, name in ipairs(RAID_FRAME_NAMES) do
+        local rf = _G[name]
+        if rf and rf:IsShown() then
+            return true
+        end
+    end
+    return false
+end
+
+-- Width and height of a full group (5 party members, or 8 raid groups of 5) laid out the way
+-- ApplyLiveVisuals would, measured from the container's top-left corner, in the frames' own units.
+-- Unlock mode outlines this so you see the whole footprint, not just who's in the group right now.
+function ns.GetFullGroupSize(mode)
+    local w, h, horiz, border = ResolveLiveProfile(ns.GetProfile(mode), ns.GetSizeRanges())
+    local gaps = RAID_GROUP_GAP * (RAID_GROUPS - 1)
+
+    if mode ~= "raid" then
+        local cpf = _G["CompactPartyFrame"]
+        local titleH = (cpf and cpf.title and cpf.title:IsShown() and cpf.title:GetHeight()) or 0
+        return GetPartyContainerSize(w, h, horiz, border, titleH)
+    end
+
+    if RaidUsesCombinedFrames() then
+        -- Rows (horizontal) or columns (vertical) of 5, RAID_GROUP_GAP between each block of 5.
+        local startX, startY = border and 7 or 0, border and 5 or 0
+        if horiz then
+            return startX + w * 5, startY + h * RAID_GROUPS + gaps
+        end
+        return startX + w * RAID_GROUPS + gaps, startY + h * 5
+    end
+
+    local groupName = RAID_GROUP_NAMES[1]
+    local groupW, groupH = GetRaidGroupSize(w, h, horiz, border, GetRaidGroupTitleHeight(_G[groupName], groupName))
+    if horiz then
+        return groupW, groupH * RAID_GROUPS + gaps
+    end
+    return groupW * RAID_GROUPS + gaps, groupH
+end
+
+function ns.ApplyLiveVisuals()
+    ApplyLiveToAllFrames()
+    -- Keep the unlock-mode boxes (Movers.lua) on top of the frames after every layout change.
+    if ns.UpdateMovers then
+        ns.UpdateMovers()
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Edit Mode C++ Persistence (Saves to BOTH Party and Raid systems)
 ---------------------------------------------------------------------------
 local function IsEditModeAvailable()
     return C_EditMode and C_EditMode.GetLayouts and C_EditMode.SaveLayouts
-        and EditModePresetLayoutManager
+        and EditModePresetLayoutManager and EditModePresetLayoutManager.GetCopyOfPresetLayouts
         and Enum and Enum.EditModeUnitFrameSetting
         and Enum.EditModeUnitFrameSetting.UseRaidStylePartyFrames ~= nil
 end
@@ -683,6 +604,16 @@ end
 local function IsEditModeReady()
     return IsEditModeAvailable() and EditModeManagerFrame and EditModeManagerFrame.accountSettings ~= nil
 end
+
+-- In clients with Edit Mode, the Edit Mode layout owns where the frames sit. We never pin them to a
+-- position of our own there, otherwise Blizzard's Edit Mode could no longer drag them.
+-- Clients without Edit Mode keep the position in ns.db.partyPos / ns.db.raidPos instead.
+function ns.UsesEditModePositions()
+    return IsEditModeAvailable() and true or false
+end
+
+-- Positions from unlock mode waiting to be written into the Edit Mode layout by SaveToEditMode.
+local pendingAnchors = {}
 
 local function DeepCopy(src, seen)
     if type(src) ~= "table" then
@@ -738,63 +669,26 @@ local function ToRawValue(settingID, displayValue)
     return displayValue
 end
 
-local function WrapPresetEntry(entry, defaultName)
-    if type(entry) ~= "table" then
-        return nil
-    end
-    local presetType = (Enum and Enum.EditModeLayoutType and Enum.EditModeLayoutType.Preset) or 0
-    if type(entry.systems) == "table" then
-        return {
-            layoutName = (type(entry.layoutName) == "string" and entry.layoutName ~= "" and entry.layoutName) or defaultName,
-            layoutType = presetType,
-            systems = DeepCopy(entry.systems),
-        }
-    end
-    return {
-        layoutName = defaultName,
-        layoutType = presetType,
-        systems = DeepCopy(entry),
-    }
-end
-
+-- Builds the same combined list EditModeManagerFrameMixin:UpdateLayoutInfo uses (and passes to
+-- C_EditMode.SaveLayouts): Blizzard's presets first, then every saved layout. activeLayout is an
+-- index into that list, so saved layouts are deep-copied but never dropped or reordered: any shift
+-- would point activeLayout at another layout and switch the player off theirs (e.g. to "Modern").
 local function LoadLayouts()
     local layoutInfo = C_EditMode.GetLayouts()
-    if not layoutInfo or not layoutInfo.layouts then
+    if not layoutInfo or type(layoutInfo.layouts) ~= "table" then
         return nil
     end
-    local all = {}
-    local presetType = (Enum and Enum.EditModeLayoutType and Enum.EditModeLayoutType.Preset) or 0
-
-    local presets = EditModePresetLayoutManager and EditModePresetLayoutManager.presetLayoutMap
-    if type(presets) == "table" then
-        if presets[0] ~= nil then
-            local p0 = WrapPresetEntry(presets[0], HUD_EDIT_MODE_MODERN_PRESET or "Modern")
-            if p0 then all[#all + 1] = p0 end
-        end
-        for i = 1, #presets do
-            local p = WrapPresetEntry(presets[i], (i == 1 and (HUD_EDIT_MODE_CLASSIC_PRESET or "Classic")) or ("Preset " .. i))
-            if p then all[#all + 1] = p end
-        end
+    -- Read-only on Blizzard's side: returns a fresh CopyTable of the preset layouts.
+    local all = EditModePresetLayoutManager:GetCopyOfPresetLayouts()
+    if type(all) ~= "table" then
+        return nil
     end
-
     for i = 1, #layoutInfo.layouts do
-        local layout = layoutInfo.layouts[i]
-        if type(layout) == "table" and type(layout.systems) == "table"
-            and type(layout.layoutName) == "string" and layout.layoutName ~= ""
-            and layout.layoutName ~= OLD_LAYOUT_NAME
-            and layout.layoutType ~= presetType then
-            all[#all + 1] = {
-                layoutName = layout.layoutName,
-                layoutType = layout.layoutType,
-                systems = DeepCopy(layout.systems),
-            }
-        end
+        all[#all + 1] = DeepCopy(layoutInfo.layouts[i])
     end
-
     layoutInfo.layouts = all
-    if not all[layoutInfo.activeLayout] and #all > 0 then
-        -- Default to Modern Preset (index 1), never Classic Preset (index 2)
-        layoutInfo.activeLayout = 1
+    if not all[layoutInfo.activeLayout] then
+        return nil
     end
     return layoutInfo
 end
@@ -929,6 +823,8 @@ function ns.SaveToEditMode()
         sys.anchorInfo.relativePoint = "TOPLEFT"
         sys.anchorInfo.offsetX = pos.x
         sys.anchorInfo.offsetY = pos.y - uiTop
+        -- A leftover second anchor point would pull the frame away from the one written above.
+        sys.anchorInfo2 = nil
     end
 
     -- 1. Party Frames system (uses ns.db.party)
@@ -939,7 +835,7 @@ function ns.SaveToEditMode()
         SetRawSystemSetting(partySys, S.ShowPartyFrameBackground, 0) -- Always off for raid-style frames
         SetRawSystemSetting(partySys, S.UseHorizontalGroups, partyProf.useHorizontalGroups and 1 or 0)
         ApplyProfileToSystem(partySys, partyProf)
-        ApplyCustomAnchor(partySys, ns.db.partyPos)
+        ApplyCustomAnchor(partySys, pendingAnchors.partyPos or ns.db.partyPos)
     end
 
     -- 2. Raid Frames system (uses ns.db.raid)
@@ -948,7 +844,7 @@ function ns.SaveToEditMode()
         local raidSys = FindUnitFrameSystem(active, Enum.EditModeUnitFrameSystemIndices.Raid)
         if raidSys then
             ApplyProfileToSystem(raidSys, raidProf)
-            ApplyCustomAnchor(raidSys, ns.db.raidPos)
+            ApplyCustomAnchor(raidSys, pendingAnchors.raidPos or ns.db.raidPos)
             if S.RaidGroupDisplayType then
                 -- RaidGroupDisplayType: 0=SeparateVert, 1=SeparateHoriz, 2=CombineVert, 3=CombineHoriz
                 local horiz = raidProf.useHorizontalGroups and 1 or 0
@@ -961,6 +857,7 @@ function ns.SaveToEditMode()
     end
 
     C_EditMode.SaveLayouts(layoutInfo)
+    -- Same index the player had selected, unless we just moved off a preset onto our own layout.
     if C_EditMode.SetActiveLayout then
         C_EditMode.SetActiveLayout(layoutInfo.activeLayout)
     end
@@ -1058,13 +955,25 @@ function ns.SetOption(key, value)
     ns.CommitChanges(true)
 end
 
-function ns.ToggleShowWhenSolo()
-    ns.SetOption("showWhenSolo", not ns.db.showWhenSolo)
-    ns.Print("Show frames when solo: " .. OnOff(ns.db.showWhenSolo))
+-- Stores where unlock mode dropped a frame group (x, y = TOPLEFT in UIParent BOTTOMLEFT space, in the
+-- moved frame's own units). With Edit Mode it goes straight into the Edit Mode layout.
+function ns.SaveFramePosition(mode, x, y)
+    local posKey = (mode == "raid") and "raidPos" or "partyPos"
+    if ns.UsesEditModePositions() then
+        pendingAnchors[posKey] = { x = x, y = y }
+        ns.CommitChanges(true)
+        pendingAnchors[posKey] = nil
+    elseif ns.db then
+        ns.db[posKey] = { x = x, y = y }
+    end
 end
 
--- Forgets the Ctrl-dragged position for a mode so Blizzard's default anchor applies again.
+-- Forgets the dragged position for a mode so Blizzard's default anchor applies again.
+-- Returns false with Edit Mode, where the position lives in the Edit Mode layout instead.
 local function ClearSavedPosition(mode)
+    if ns.UsesEditModePositions() then
+        return false
+    end
     if ns.db then
         ns.db[(mode == "raid") and "raidPos" or "partyPos"] = nil
     end
@@ -1072,10 +981,14 @@ local function ClearSavedPosition(mode)
     if target then
         target:ClearAllPoints()
     end
+    return true
 end
 
 function ns.ResetPosition(mode)
-    ClearSavedPosition(mode or ns.GetActiveMode())
+    if not ClearSavedPosition(mode or ns.GetActiveMode()) then
+        ns.Print("Use Edit Mode's \"Reset Position\" to put these frames back in their default spot.")
+        return
+    end
     ns.ApplyLiveVisuals()
     ns.Print("Position reset to default.")
 end
@@ -1087,6 +1000,13 @@ function ns.ResetSize()
     end
     ClearSavedPosition(ns.GetActiveMode())
     ns.CommitChanges(false)
+end
+
+-- Positions saved before Edit Mode owned them would keep snapping the frames back; drop them.
+local function DropPositionsOwnedByEditMode()
+    if ns.db and ns.UsesEditModePositions() then
+        ns.db.partyPos, ns.db.raidPos = nil, nil
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -1154,6 +1074,8 @@ local function Initialize()
     if SimpleRaidFramesDB.showRaidFramesInGroups == false then
         SimpleRaidFramesDB.showRaidFramesInGroups = true
     end
+    -- Replaced by unlock mode, which shows the frames while solo only while you position them.
+    SimpleRaidFramesDB.showWhenSolo = nil
     for _, mode in ipairs({ "party", "raid" }) do
         if type(SimpleRaidFramesDB[mode]) ~= "table" then
             SimpleRaidFramesDB[mode] = {}
@@ -1185,9 +1107,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         if not ns.db then
             Initialize()
         end
+        DropPositionsOwnedByEditMode()
         InstallSafeHooks()
         ScheduleLiveVisuals()
-        ns.Print("loaded. Type |cffffff00/srf|r to configure your raid & party frames.")
+        ns.Print("loaded. Type |cffffff00/srf|r to configure your raid & party frames, |cffffff00/srf help|r for commands.")
     elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
         ScheduleLiveVisuals()
         if ns.RefreshOptions then
@@ -1205,7 +1128,26 @@ end)
 ---------------------------------------------------------------------------
 -- Slash commands
 ---------------------------------------------------------------------------
-local HELP = "/srf - open config window | on | off | toggle | solo | width <n> | height <n> | size <w> <h> | reset | resetpos"
+local HELP_LINES = {
+    "|cffffd100Moving frames:|r right-click a party or raid frame and choose |cffffd100Unlock Frames|r."
+        .. " Drag the outline to move, drag its corner to resize, right-click it to lock.",
+    "|cffffd100/srf|r - open the options",
+    "|cffffd100/srf unlock|r [party|raid] - unlock frames to move them (same as the right-click menu)",
+    "|cffffd100/srf lock|r - lock the frames again",
+    "|cffffd100/srf on|r | |cffffd100off|r | |cffffd100toggle|r - show raid-style frames in groups",
+    "|cffffd100/srf width|r <n> | |cffffd100height|r <n> | |cffffd100size|r <w> <h>"
+        .. " - frame size, for the Party or Raid page you used last",
+    "|cffffd100/srf reset|r - reset that page's settings to defaults",
+    "|cffffd100/srf resetpos|r - put the frames back in their default spot",
+    "|cffffd100/srf help|r - show this list",
+}
+
+local function PrintHelp()
+    ns.Print("commands")
+    for _, line in ipairs(HELP_LINES) do
+        DEFAULT_CHAT_FRAME:AddMessage("  " .. line)
+    end
+end
 
 local function HandleSlash(msg)
     msg = strlower(strtrim(msg or ""))
@@ -1216,8 +1158,10 @@ local function HandleSlash(msg)
         ns.SetEnabled(false)
     elseif cmd == "toggle" then
         ns.SetEnabled(not ns.db.showRaidFramesInGroups)
-    elseif cmd == "solo" then
-        ns.ToggleShowWhenSolo()
+    elseif cmd == "unlock" or cmd == "move" then
+        ns.SetUnlocked(true, arg1)
+    elseif cmd == "lock" then
+        ns.SetUnlocked(false)
     elseif cmd == "resetpos" then
         ns.ResetPosition()
     elseif cmd == "width" and tonumber(arg1) then
@@ -1230,8 +1174,10 @@ local function HandleSlash(msg)
         ns.ResetSize()
     elseif cmd == "" then
         ns.OpenOptions()
+    elseif cmd == "help" or cmd == "?" then
+        PrintHelp()
     else
-        ns.Print(HELP)
+        ns.Print("Unknown command. Type |cffffff00/srf help|r for the list.")
     end
 end
 
