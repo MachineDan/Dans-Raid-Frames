@@ -5,7 +5,7 @@
 --   * MinimalSliderWithSteppersTemplate (stock Edit Mode stepper sliders with < / > buttons)
 --   * InsetFrameTemplate & UIPanelButtonTemplate (stock recessed preview box & buttons)
 
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 local PANEL_NAME = "Simple Raid Frames"
 
@@ -32,6 +32,12 @@ local TEMPLATE_OPTIONS = {
     { value = 1, label = "Buffs Top" },
     { value = 2, label = "Buffs Bottom" },
 }
+
+local function PlayClickSound(on)
+    if PlaySound and SOUNDKIT then
+        PlaySound(on and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+    end
+end
 
 -- Creates a Blizzard Settings-style row with a subtle hover highlight and gold left label.
 local function CreateSettingRow(parent, labelText)
@@ -74,10 +80,6 @@ local function CreateSectionHeader(parent, text)
     line:SetPoint("BOTTOMRIGHT", -6, 0)
     line:SetColorTexture(0.6, 0.52, 0.25, 0.45)
 
-    function header:SetTitle(newText)
-        label:SetText(newText)
-    end
-
     return header
 end
 
@@ -100,10 +102,9 @@ local function CreateStockCheckbox(parent, labelText, onClick)
     cb:HookScript("OnEnter", function() row.Highlight:Show() end)
     cb:HookScript("OnLeave", function() row.Highlight:Hide() end)
     cb:SetScript("OnClick", function(self)
-        if PlaySound and SOUNDKIT then
-            PlaySound(self:GetChecked() and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
-        end
-        onClick(self:GetChecked() and true or false)
+        local checked = self:GetChecked() and true or false
+        PlayClickSound(checked)
+        onClick(checked)
     end)
 
     function row:SetChecked(val)
@@ -199,9 +200,7 @@ local function OpenDropdownPopup(ownerBtn, options, getValue, onSelect, refreshO
         end
 
         item:SetScript("OnClick", function()
-            if PlaySound and SOUNDKIT then
-                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-            end
+            PlayClickSound(true)
             CloseDropdownPopup()
             onSelect(opt.value)
             refreshOwner()
@@ -259,9 +258,7 @@ local function CreateStockDropdown(parent, labelText, options, getValue, onSelec
     -- Intercept mouse down so WowStyle1DropdownTemplate opens our taint-free menu
     -- instead of acquiring radio frames from Blizzard_Menu's global shared pool.
     dropdown:SetScript("OnMouseDown", function(self)
-        if PlaySound and SOUNDKIT then
-            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-        end
+        PlayClickSound(true)
         OpenDropdownPopup(self, options, getValue, onSelect, function()
             row:Refresh()
         end)
@@ -295,8 +292,28 @@ local function CreateStockSlider(parent, labelText, suffix, onChanged, onCommit)
     row.lastValue = nil
     row.updating = false
 
+    local function OnSliderValueChanged(value)
+        local step = row.step or 2
+        local min = row.min or 0
+        local snapped = min + math.floor((value - min) / step + 0.5) * step
+        valueText:SetText(FormatVal(snapped))
+        if not row.updating and snapped ~= row.lastValue then
+            row.lastValue = snapped
+            onChanged(snapped)
+        end
+    end
+
+    local function Commit()
+        if not row.updating and onCommit and row.lastValue then
+            onCommit(row.lastValue)
+        end
+    end
+
+    local control -- the widget whose SetValue drives the row (stepper or fallback slider)
+
     local ok, stepper = pcall(CreateFrame, "Slider", nil, row, "MinimalSliderWithSteppersTemplate")
     if ok and stepper and stepper.Init and MinimalSliderWithSteppersMixin then
+        control = stepper
         stepper:SetSize(CONTROL_WIDTH - VALUE_WIDTH - 6, 20)
         stepper:SetPoint("RIGHT", valueText, "LEFT", -6, 0)
         row.Label:SetPoint("RIGHT", stepper, "LEFT", -12, 0)
@@ -320,36 +337,18 @@ local function CreateStockSlider(parent, labelText, suffix, onChanged, onCommit)
         stepper:Init(72, 72, 144, 36, {})
 
         stepper:RegisterCallback(MinimalSliderWithSteppersMixin.Event.OnValueChanged, function(_, value)
-            local step = row.step or 2
-            local min = row.min or 0
-            local snapped = min + math.floor((value - min) / step + 0.5) * step
-            valueText:SetText(FormatVal(snapped))
-            if not row.updating and snapped ~= row.lastValue then
-                row.lastValue = snapped
-                onChanged(snapped)
-            end
+            OnSliderValueChanged(value)
         end)
 
+        -- Persist to Edit Mode once the user releases the slider or clicks < / >.
         if stepper.Slider then
-            stepper.Slider:HookScript("OnMouseUp", function()
-                if not row.updating and onCommit and row.lastValue then
-                    onCommit(row.lastValue)
-                end
-            end)
+            stepper.Slider:HookScript("OnMouseUp", Commit)
         end
         if stepper.Back then
-            stepper.Back:HookScript("OnClick", function()
-                if not row.updating and onCommit and row.lastValue then
-                    onCommit(row.lastValue)
-                end
-            end)
+            stepper.Back:HookScript("OnClick", Commit)
         end
         if stepper.Forward then
-            stepper.Forward:HookScript("OnClick", function()
-                if not row.updating and onCommit and row.lastValue then
-                    onCommit(row.lastValue)
-                end
-            end)
+            stepper.Forward:HookScript("OnClick", Commit)
         end
 
         function row:SetRange(min, max, step)
@@ -367,63 +366,49 @@ local function CreateStockSlider(parent, labelText, suffix, onChanged, onCommit)
             end
             self.updating = false
         end
+    else
+        -- Fallback standard slider if MinimalSliderWithSteppersTemplate is unavailable
+        if ok and stepper and stepper.Hide then
+            stepper:Hide()
+        end
+        local slider = CreateFrame("Slider", nil, row)
+        slider:SetOrientation("HORIZONTAL")
+        slider:SetSize(CONTROL_WIDTH - VALUE_WIDTH - 6, 16)
+        slider:SetPoint("RIGHT", valueText, "LEFT", -6, 0)
+        row.Label:SetPoint("RIGHT", slider, "LEFT", -12, 0)
+        if slider.SetObeyStepOnDrag then
+            slider:SetObeyStepOnDrag(true)
+        end
+        local track = slider:CreateTexture(nil, "BACKGROUND")
+        track:SetColorTexture(0, 0, 0, 0.6)
+        track:SetPoint("LEFT")
+        track:SetPoint("RIGHT")
+        track:SetHeight(6)
+        slider:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
 
-        function row:SetValueSilently(value)
+        slider:SetScript("OnValueChanged", function(_, value)
+            OnSliderValueChanged(value)
+        end)
+        slider:SetScript("OnMouseUp", Commit)
+        control = slider
+
+        function row:SetRange(min, max, step)
+            self.min, self.max, self.step = min, max, step
             self.updating = true
-            self.lastValue = value
-            stepper:SetValue(value)
-            valueText:SetText(FormatVal(value))
+            slider:SetMinMaxValues(min, max)
+            slider:SetValueStep(step)
             self.updating = false
         end
-
-        return row
     end
 
-    -- Fallback standard slider if MinimalSliderWithSteppersTemplate is unavailable
-    local slider = CreateFrame("Slider", nil, row)
-    slider:SetOrientation("HORIZONTAL")
-    slider:SetSize(CONTROL_WIDTH - VALUE_WIDTH - 6, 16)
-    slider:SetPoint("RIGHT", valueText, "LEFT", -6, 0)
-    row.Label:SetPoint("RIGHT", slider, "LEFT", -12, 0)
-    if slider.SetObeyStepOnDrag then
-        slider:SetObeyStepOnDrag(true)
-    end
-    local track = slider:CreateTexture(nil, "BACKGROUND")
-    track:SetColorTexture(0, 0, 0, 0.6)
-    track:SetPoint("LEFT")
-    track:SetPoint("RIGHT")
-    track:SetHeight(6)
-    slider:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
-
-    slider:SetScript("OnValueChanged", function(_, value)
-        local step = row.step or 2
-        local min = row.min or 0
-        local snapped = min + math.floor((value - min) / step + 0.5) * step
-        valueText:SetText(FormatVal(snapped))
-        if not row.updating and snapped ~= row.lastValue then
-            row.lastValue = snapped
-            onChanged(snapped)
-        end
-    end)
-    slider:SetScript("OnMouseUp", function()
-        if onCommit and row.lastValue then
-            onCommit(row.lastValue)
-        end
-    end)
-    function row:SetRange(min, max, step)
-        self.min, self.max, self.step = min, max, step
-        self.updating = true
-        slider:SetMinMaxValues(min, max)
-        slider:SetValueStep(step)
-        self.updating = false
-    end
     function row:SetValueSilently(value)
         self.updating = true
         self.lastValue = value
-        slider:SetValue(value)
+        control:SetValue(value)
         valueText:SetText(FormatVal(value))
         self.updating = false
     end
+
     return row
 end
 
@@ -522,7 +507,7 @@ local function CreatePreviewBox(parent, fixedMode)
         unitFrame:SetSize(w, h)
 
         local opacity = (prof and prof.opacity) or 100
-        unitFrame:SetAlpha(math.max(0.5, math.min(1.0, opacity / 100)))
+        unitFrame:SetAlpha(ns.OpacityToAlpha(opacity))
 
         local bigDefScale = ((prof and prof.bigDefensiveSize) or 100) / 100
         local buffScale = ((prof and prof.buffSize) or 100) / 100
@@ -570,7 +555,6 @@ local function CreatePreviewBox(parent, fixedMode)
         sizeLabel:SetText(("%d x %d  •  %d%% Opacity"):format(w, h, opacity))
         local isHoriz = prof and prof.useHorizontalGroups
         orientLabel:SetText(("%s  •  %s"):format(isHoriz and "Horizontal" or "Vertical", templateLabel))
-        moveHintLabel:SetText("|cff88ddffHold Ctrl + Drag frames to move|r")
     end
 
     return box
@@ -618,8 +602,7 @@ local function BuildRootPanel(panel)
         end
         cbRaidStyle:SetChecked(ns.db.showRaidFramesInGroups)
         cbSolo:SetChecked(ns.db.showWhenSolo)
-        partyPreview:UpdateSize(ns.GetSize("party"))
-        raidPreview:UpdateSize(ns.GetSize("raid"))
+        self:UpdatePreview()
     end
 
     function view:UpdatePreview()
@@ -657,6 +640,13 @@ local function BuildModePanel(panel, mode)
         statusText:SetText(("|cff00ff00Applied to %s (%d x %d)|r"):format(modeLabel, w, h))
     end
 
+    -- Saves a setting for this panel's mode straight to Edit Mode.
+    local function SetModeOption(key, value)
+        ns.SetActiveMode(mode)
+        ns.SetOption(key, value)
+        ShowSavedStatus()
+    end
+
     -- Section 1: Visibility
     local visHeader = CreateSectionHeader(panel, "Visibility")
     visHeader:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", 0, -10)
@@ -669,9 +659,7 @@ local function BuildModePanel(panel, mode)
     cbRaidStyle:SetPoint("TOPLEFT", visHeader, "BOTTOMLEFT", 0, -4)
 
     local cbSolo = CreateStockCheckbox(panel, "Show Frames When Solo (Preview)", function(checked)
-        ns.SetActiveMode(mode)
-        ns.SetOption("showWhenSolo", checked)
-        ShowSavedStatus()
+        SetModeOption("showWhenSolo", checked)
     end)
     cbSolo:SetPoint("TOPLEFT", cbRaidStyle, "BOTTOMLEFT", 0, ROW_GAP)
 
@@ -683,9 +671,7 @@ local function BuildModePanel(panel, mode)
         local prof = ns.GetProfile(mode)
         return (prof and prof.useHorizontalGroups) and true or false
     end, function(isHorizontal)
-        ns.SetActiveMode(mode)
-        ns.SetOption("useHorizontalGroups", isHorizontal)
-        ShowSavedStatus()
+        SetModeOption("useHorizontalGroups", isHorizontal)
     end)
     orientDropdown:SetPoint("TOPLEFT", layoutHeader, "BOTTOMLEFT", 0, -4)
 
@@ -693,9 +679,7 @@ local function BuildModePanel(panel, mode)
         local prof = ns.GetProfile(mode)
         return prof and prof.sortBy or 0
     end, function(value)
-        ns.SetActiveMode(mode)
-        ns.SetOption("sortBy", value)
-        ShowSavedStatus()
+        SetModeOption("sortBy", value)
     end)
     sortDropdown:SetPoint("TOPLEFT", orientDropdown, "BOTTOMLEFT", 0, ROW_GAP)
 
@@ -703,16 +687,12 @@ local function BuildModePanel(panel, mode)
         local prof = ns.GetProfile(mode)
         return prof and prof.auraOrganizationType or 0
     end, function(value)
-        ns.SetActiveMode(mode)
-        ns.SetOption("auraOrganizationType", value)
-        ShowSavedStatus()
+        SetModeOption("auraOrganizationType", value)
     end)
     templateDropdown:SetPoint("TOPLEFT", sortDropdown, "BOTTOMLEFT", 0, ROW_GAP)
 
     local cbBorder = CreateStockCheckbox(panel, "Display Border", function(checked)
-        ns.SetActiveMode(mode)
-        ns.SetOption("displayBorder", checked)
-        ShowSavedStatus()
+        SetModeOption("displayBorder", checked)
     end)
     cbBorder:SetPoint("TOPLEFT", templateDropdown, "BOTTOMLEFT", 0, ROW_GAP)
 
@@ -726,48 +706,45 @@ local function BuildModePanel(panel, mode)
         ShowSavedStatus()
     end
 
-    local widthSlider = CreateStockSlider(panel, "Frame Width", "", function(value)
-        ns.SetActiveMode(mode)
-        ns.StageSize(value, nil)
-        local w, h = ns.GetSize(mode)
-        statusText:SetText(("|cff00ff00%d x %d|r"):format(w, h))
-    end, CommitSlider)
+    -- Width/height sliders resize live while dragging; Edit Mode is saved on release.
+    local function CreateSizeSlider(labelText, isWidth)
+        return CreateStockSlider(panel, labelText, "", function(value)
+            ns.SetActiveMode(mode)
+            if isWidth then
+                ns.StageSize(value, nil)
+            else
+                ns.StageSize(nil, value)
+            end
+            local w, h = ns.GetSize(mode)
+            statusText:SetText(("|cff00ff00%d x %d|r"):format(w, h))
+        end, CommitSlider)
+    end
+
+    -- Percentage sliders for a profile key, staged live and saved on release.
+    local function CreatePercentSlider(labelText, key, statusLabel)
+        return CreateStockSlider(panel, labelText, "%", function(value)
+            ns.SetActiveMode(mode)
+            ns.StageOption(key, value)
+            statusText:SetText(("|cff00ff00%s: %d%%|r"):format(statusLabel, value))
+        end, CommitSlider)
+    end
+
+    local widthSlider = CreateSizeSlider("Frame Width", true)
     widthSlider:SetPoint("TOPLEFT", sizeHeader, "BOTTOMLEFT", 0, -4)
 
-    local heightSlider = CreateStockSlider(panel, "Frame Height", "", function(value)
-        ns.SetActiveMode(mode)
-        ns.StageSize(nil, value)
-        local w, h = ns.GetSize(mode)
-        statusText:SetText(("|cff00ff00%d x %d|r"):format(w, h))
-    end, CommitSlider)
+    local heightSlider = CreateSizeSlider("Frame Height", false)
     heightSlider:SetPoint("TOPLEFT", widthSlider, "BOTTOMLEFT", 0, ROW_GAP)
 
-    local opacitySlider = CreateStockSlider(panel, "Opacity", "%", function(value)
-        ns.SetActiveMode(mode)
-        ns.StageOption("opacity", value)
-        statusText:SetText(("|cff00ff00Opacity: %d%%|r"):format(value))
-    end, CommitSlider)
+    local opacitySlider = CreatePercentSlider("Opacity", "opacity", "Opacity")
     opacitySlider:SetPoint("TOPLEFT", heightSlider, "BOTTOMLEFT", 0, ROW_GAP)
 
-    local bigDefSlider = CreateStockSlider(panel, "Big Defensive Size", "%", function(value)
-        ns.SetActiveMode(mode)
-        ns.StageOption("bigDefensiveSize", value)
-        statusText:SetText(("|cff00ff00Big Defensive: %d%%|r"):format(value))
-    end, CommitSlider)
+    local bigDefSlider = CreatePercentSlider("Big Defensive Size", "bigDefensiveSize", "Big Defensive")
     bigDefSlider:SetPoint("TOPLEFT", opacitySlider, "BOTTOMLEFT", 0, ROW_GAP)
 
-    local buffSizeSlider = CreateStockSlider(panel, "Buff Size", "%", function(value)
-        ns.SetActiveMode(mode)
-        ns.StageOption("buffSize", value)
-        statusText:SetText(("|cff00ff00Buff Size: %d%%|r"):format(value))
-    end, CommitSlider)
+    local buffSizeSlider = CreatePercentSlider("Buff Size", "buffSize", "Buff Size")
     buffSizeSlider:SetPoint("TOPLEFT", bigDefSlider, "BOTTOMLEFT", 0, ROW_GAP)
 
-    local iconSizeSlider = CreateStockSlider(panel, "Icon Size", "%", function(value)
-        ns.SetActiveMode(mode)
-        ns.StageOption("iconSize", value)
-        statusText:SetText(("|cff00ff00Icon Size: %d%%|r"):format(value))
-    end, CommitSlider)
+    local iconSizeSlider = CreatePercentSlider("Icon Size", "iconSize", "Icon Size")
     iconSizeSlider:SetPoint("TOPLEFT", buffSizeSlider, "BOTTOMLEFT", 0, ROW_GAP)
 
     -- Right-side recessed 1:1 Preview Box + Action Buttons
@@ -827,7 +804,7 @@ local function BuildModePanel(panel, mode)
         buffSizeSlider:SetValueSilently(prof.buffSize or 100)
         iconSizeSlider:SetValueSilently(prof.iconSize or 100)
 
-        previewBox:UpdateSize(width, height)
+        self:UpdatePreview()
     end
 
     function view:UpdatePreview()
@@ -882,7 +859,7 @@ end
 function ns.UpdatePreviewBoxes()
     for _, view in ipairs(panels) do
         if view.UpdatePreview then
-            view.UpdatePreview()
+            view:UpdatePreview()
         end
     end
 end
@@ -907,6 +884,7 @@ function ns.OpenOptions()
         Settings.OpenToCategory(ns.settingsCategory:GetID())
         return true
     elseif InterfaceOptionsFrame_OpenToCategory and ns.optionsPanel then
+        -- Called twice on purpose: on old clients the first call only opens the AddOns tab.
         InterfaceOptionsFrame_OpenToCategory(ns.optionsPanel)
         InterfaceOptionsFrame_OpenToCategory(ns.optionsPanel)
         return true
@@ -916,15 +894,8 @@ end
 
 function SimpleRaidFrames_OnAddonCompartmentClick(_, mouseButton)
     if mouseButton == "RightButton" then
-        ns.SetOption("showWhenSolo", not ns.db.showWhenSolo)
-        ns.Print("Show frames when solo: " .. (ns.db.showWhenSolo and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+        ns.ToggleShowWhenSolo()
     else
         ns.OpenOptions()
     end
-end
-
-function SimpleRaidFrames_OnAddonCompartmentEnter()
-end
-
-function SimpleRaidFrames_OnAddonCompartmentLeave()
 end

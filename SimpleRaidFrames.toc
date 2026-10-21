@@ -10,8 +10,6 @@
 ## Category-esES: Interfaz de usuario
 ## Category-esMX: Interfaz de usuario
 ## AddonCompartmentFunc: SimpleRaidFrames_OnAddonCompartmentClick
-## AddonCompartmentFuncOnEnter: SimpleRaidFrames_OnAddonCompartmentEnter
-## AddonCompartmentFuncOnLeave: SimpleRaidFrames_OnAddonCompartmentLeave
 ## SavedVariables: SimpleRaidFramesDB
 
 Options.lua

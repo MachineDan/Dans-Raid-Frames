@@ -1,7 +1,7 @@
 -- SimpleRaidFrames: Quick-access "/srf" window for all the Raid & Party Frame
 -- options buried inside Blizzard's Edit Mode, with live 60 FPS resizing and zero 12.0 taint.
 --
--- Settings always apply to BOTH Party Frames and Raid Frames.
+-- Party Frames and Raid Frames each have their own profile (ns.db.party / ns.db.raid).
 --
 -- IMPORTANT (WoW 12.0 / Forever secret-value rules):
 -- 1. NEVER call Blizzard Lua methods on PartyFrame, CompactPartyFrame, CompactUnitFrame,
@@ -62,11 +62,36 @@ local ROLE_WEIGHT = {
     NONE = 4,
 }
 
+-- Global names of Blizzard's compact unit frames, built once so the per-frame
+-- drag watcher doesn't concatenate strings on every OnUpdate.
+local PARTY_MEMBER_NAMES = {}
+for i = 1, 5 do
+    PARTY_MEMBER_NAMES[i] = "CompactPartyFrameMember" .. i
+end
+
+local RAID_GROUP_NAMES, RAID_GROUP_MEMBER_NAMES = {}, {}
+for g = 1, 8 do
+    RAID_GROUP_NAMES[g] = "CompactRaidGroup" .. g
+    RAID_GROUP_MEMBER_NAMES[g] = {}
+    for m = 1, 5 do
+        RAID_GROUP_MEMBER_NAMES[g][m] = "CompactRaidGroup" .. g .. "Member" .. m
+    end
+end
+
+local RAID_FRAME_NAMES = {}
+for i = 1, 40 do
+    RAID_FRAME_NAMES[i] = "CompactRaidFrame" .. i
+end
+
 local GetCVarValue = (C_CVar and C_CVar.GetCVar) or GetCVar
 local SetCVarValue = (C_CVar and C_CVar.SetCVar) or SetCVar
 
 function ns.Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage(PREFIX .. tostring(msg))
+end
+
+local function OnOff(value)
+    return value and "|cff00ff00ON|r" or "|cffff0000OFF|r"
 end
 
 local function GetSettingDisplayInfo(settingID)
@@ -113,6 +138,10 @@ local function Snap(value, range)
     return min + math.floor((value - min) / step + 0.5) * step
 end
 
+function ns.OpacityToAlpha(opacity)
+    return math.max(0.5, math.min(1.0, opacity / 100))
+end
+
 ---------------------------------------------------------------------------
 -- Ctrl + Left-Click Hold Dragging (Pure C++ widget methods, zero taint)
 ---------------------------------------------------------------------------
@@ -140,29 +169,24 @@ do
     bg:SetAllPoints()
     bg:SetColorTexture(0.05, 0.05, 0.08, 0.92)
 
-    local bTop = dragHintTooltip:CreateTexture(nil, "BORDER")
-    bTop:SetColorTexture(0.45, 0.45, 0.5, 0.85)
-    bTop:SetPoint("TOPLEFT", 0, 0)
-    bTop:SetPoint("TOPRIGHT", 0, 0)
-    bTop:SetHeight(1)
-
-    local bBot = dragHintTooltip:CreateTexture(nil, "BORDER")
-    bBot:SetColorTexture(0.45, 0.45, 0.5, 0.85)
-    bBot:SetPoint("BOTTOMLEFT", 0, 0)
-    bBot:SetPoint("BOTTOMRIGHT", 0, 0)
-    bBot:SetHeight(1)
-
-    local bLeft = dragHintTooltip:CreateTexture(nil, "BORDER")
-    bLeft:SetColorTexture(0.45, 0.45, 0.5, 0.85)
-    bLeft:SetPoint("TOPLEFT", 0, 0)
-    bLeft:SetPoint("BOTTOMLEFT", 0, 0)
-    bLeft:SetWidth(1)
-
-    local bRight = dragHintTooltip:CreateTexture(nil, "BORDER")
-    bRight:SetColorTexture(0.45, 0.45, 0.5, 0.85)
-    bRight:SetPoint("TOPRIGHT", 0, 0)
-    bRight:SetPoint("BOTTOMRIGHT", 0, 0)
-    bRight:SetWidth(1)
+    -- 1px border: top, bottom, left, right
+    local EDGES = {
+        { "TOPLEFT", "TOPRIGHT", true },
+        { "BOTTOMLEFT", "BOTTOMRIGHT", true },
+        { "TOPLEFT", "BOTTOMLEFT", false },
+        { "TOPRIGHT", "BOTTOMRIGHT", false },
+    }
+    for _, edge in ipairs(EDGES) do
+        local tex = dragHintTooltip:CreateTexture(nil, "BORDER")
+        tex:SetColorTexture(0.45, 0.45, 0.5, 0.85)
+        tex:SetPoint(edge[1], 0, 0)
+        tex:SetPoint(edge[2], 0, 0)
+        if edge[3] then
+            tex:SetHeight(1)
+        else
+            tex:SetWidth(1)
+        end
+    end
 end
 
 local dragHintText = dragHintTooltip:CreateFontString(nil, "OVERLAY", "GameTooltipTextSmall")
@@ -172,8 +196,8 @@ dragHintText:SetText("|cff88ddffCtrl + Drag to move|r")
 local function GetHoveredUnitFrameDragTarget()
     local cpf = _G["CompactPartyFrame"]
     if cpf and cpf:IsShown() then
-        for i = 1, 5 do
-            local mf = _G["CompactPartyFrameMember" .. i]
+        for _, name in ipairs(PARTY_MEMBER_NAMES) do
+            local mf = _G[name]
             if mf and mf:IsShown() and mf:IsMouseOver() then
                 return cpf, "partyPos"
             end
@@ -182,19 +206,19 @@ local function GetHoveredUnitFrameDragTarget()
 
     local container = _G["CompactRaidFrameContainer"]
     if container and container:IsShown() then
-        for g = 1, 8 do
-            local gf = _G["CompactRaidGroup" .. g]
+        for g, groupName in ipairs(RAID_GROUP_NAMES) do
+            local gf = _G[groupName]
             if gf and gf:IsShown() then
-                for m = 1, 5 do
-                    local mf = _G["CompactRaidGroup" .. g .. "Member" .. m]
+                for _, name in ipairs(RAID_GROUP_MEMBER_NAMES[g]) do
+                    local mf = _G[name]
                     if mf and mf:IsShown() and mf:IsMouseOver() then
                         return container, "raidPos"
                     end
                 end
             end
         end
-        for i = 1, 40 do
-            local rf = _G["CompactRaidFrame" .. i]
+        for _, name in ipairs(RAID_FRAME_NAMES) do
+            local rf = _G[name]
             if rf and rf:IsShown() and rf:IsMouseOver() then
                 return container, "raidPos"
             end
@@ -204,22 +228,30 @@ local function GetHoveredUnitFrameDragTarget()
     return nil, nil
 end
 
-local dragWatcher = CreateFrame("Frame")
-dragWatcher:SetScript("OnUpdate", function()
-    local inCombat = InCombatLockdown()
-    local leftDown = IsMouseButtonDown("LeftButton")
+-- Shows the "Ctrl + Drag to move" hint just below the unit's GameTooltip.
+local function UpdateDragHint()
+    if GameTooltip and GameTooltip:IsShown() and GameTooltip.GetLeft and GameTooltip.GetBottom then
+        local gLeft, gBottom = GameTooltip:GetLeft(), GameTooltip:GetBottom()
+        if gLeft and gBottom then
+            local w = (dragHintText:GetStringWidth() or 110) + 18
+            dragHintTooltip:SetSize(math.max(120, w), 22)
+            dragHintTooltip:ClearAllPoints()
+            dragHintTooltip:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", gLeft, gBottom - 2)
+            dragHintTooltip:Show()
+            return
+        end
+    end
+    dragHintTooltip:Hide()
+end
 
+local function UpdateDrag(inCombat, leftDown)
     if activeDragTarget then
         if inCombat or not leftDown then
-            local posKey = activeDragPosKey
-            local finalX, finalY = dragLastLeft, dragLastTop
-            activeDragTarget = nil
-            activeDragPosKey = nil
-            dragLastLeft, dragLastTop = nil, nil
-            wasLeftButtonDown = leftDown
-            if posKey and finalX and finalY and ns.db then
-                ns.db[posKey] = { x = finalX, y = finalY }
+            if activeDragPosKey and dragLastLeft and dragLastTop and ns.db then
+                ns.db[activeDragPosKey] = { x = dragLastLeft, y = dragLastTop }
             end
+            activeDragTarget, activeDragPosKey = nil, nil
+            dragLastLeft, dragLastTop = nil, nil
             return
         end
 
@@ -228,59 +260,47 @@ dragWatcher:SetScript("OnUpdate", function()
             scale = 1
         end
         local curX, curY = GetCursorPosition()
-        local dx = (curX - dragStartCursorX) / scale
-        local dy = (curY - dragStartCursorY) / scale
-        dragLastLeft = dragStartLeft + dx
-        dragLastTop = dragStartTop + dy
+        dragLastLeft = dragStartLeft + (curX - dragStartCursorX) / scale
+        dragLastTop = dragStartTop + (curY - dragStartCursorY) / scale
 
         activeDragTarget:ClearAllPoints()
         activeDragTarget:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", dragLastLeft, dragLastTop)
         dragHintTooltip:Hide()
-        wasLeftButtonDown = leftDown
         return
     end
 
     if inCombat then
         dragHintTooltip:Hide()
-        wasLeftButtonDown = leftDown
         return
     end
 
     local hoveredTarget, hoveredPosKey = GetHoveredUnitFrameDragTarget()
-    if hoveredTarget then
-        if leftDown and not wasLeftButtonDown and IsControlKeyDown() then
-            local left = hoveredTarget.GetLeft and hoveredTarget:GetLeft()
-            local top = hoveredTarget.GetTop and hoveredTarget:GetTop()
-            if left and top then
-                dragHintTooltip:Hide()
-                activeDragTarget = hoveredTarget
-                activeDragPosKey = hoveredPosKey
-                dragStartCursorX, dragStartCursorY = GetCursorPosition()
-                dragStartLeft, dragStartTop = left, top
-                dragLastLeft, dragLastTop = left, top
-                wasLeftButtonDown = leftDown
-                return
-            end
-        end
-
-        if GameTooltip and GameTooltip:IsShown() and GameTooltip.GetLeft and GameTooltip.GetBottom then
-            local gLeft, gBottom = GameTooltip:GetLeft(), GameTooltip:GetBottom()
-            if gLeft and gBottom then
-                local w = (dragHintText:GetStringWidth() or 110) + 18
-                dragHintTooltip:SetSize(math.max(120, w), 22)
-                dragHintTooltip:ClearAllPoints()
-                dragHintTooltip:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", gLeft, gBottom - 2)
-                dragHintTooltip:Show()
-            else
-                dragHintTooltip:Hide()
-            end
-        else
-            dragHintTooltip:Hide()
-        end
-    else
+    if not hoveredTarget then
         dragHintTooltip:Hide()
+        return
     end
 
+    if leftDown and not wasLeftButtonDown and IsControlKeyDown() then
+        local left = hoveredTarget.GetLeft and hoveredTarget:GetLeft()
+        local top = hoveredTarget.GetTop and hoveredTarget:GetTop()
+        if left and top then
+            dragHintTooltip:Hide()
+            activeDragTarget = hoveredTarget
+            activeDragPosKey = hoveredPosKey
+            dragStartCursorX, dragStartCursorY = GetCursorPosition()
+            dragStartLeft, dragStartTop = left, top
+            dragLastLeft, dragLastTop = left, top
+            return
+        end
+    end
+
+    UpdateDragHint()
+end
+
+local dragWatcher = CreateFrame("Frame")
+dragWatcher:SetScript("OnUpdate", function()
+    local leftDown = IsMouseButtonDown("LeftButton")
+    UpdateDrag(InCombatLockdown(), leftDown)
     wasLeftButtonDown = leftDown
 end)
 
@@ -353,19 +373,18 @@ local function ApplyLiveToRaidFrames(w, h, horiz, border, alpha)
 
     -- 1. Grouped raid frames (CompactRaidGroup1..8 and their Member1..5)
     local shownGroups = {}
-    for g = 1, 8 do
-        local groupFrame = _G["CompactRaidGroup" .. g]
+    for g, groupName in ipairs(RAID_GROUP_NAMES) do
+        local groupFrame = _G[groupName]
         if groupFrame then
             DisableMouseOnDecoration(groupFrame)
-            local title = groupFrame.title or _G["CompactRaidGroup" .. g .. "Title"]
+            local title = groupFrame.title or _G[groupName .. "Title"]
             local titleH = (title and title.GetHeight and title:GetHeight()) or 14
             local padX = border and 7 or 0
             local padY = border and 5 or 0
 
             local prevMember = nil
-            local shownInGroup = 0
-            for m = 1, 5 do
-                local mf = _G["CompactRaidGroup" .. g .. "Member" .. m]
+            for _, memberName in ipairs(RAID_GROUP_MEMBER_NAMES[g]) do
+                local mf = _G[memberName]
                 if mf then
                     mf:SetSize(w, h)
                     PassThroughUnitSubframes(mf)
@@ -378,20 +397,14 @@ local function ApplyLiveToRaidFrames(w, h, horiz, border, alpha)
                         mf:SetPoint("TOP", prevMember, "BOTTOM", 0, 0)
                     end
                     prevMember = mf
-                    if mf:IsShown() then
-                        shownInGroup = m
-                    end
                 end
-            end
-            if shownInGroup == 0 then
-                shownInGroup = 5
             end
 
             local groupW = (horiz and (w * 5) or w) + (border and 14 or 0)
             local groupH = (horiz and h or (h * 5)) + titleH + (border and 12 or 2)
             groupFrame:SetSize(groupW, groupH)
 
-            local bf = groupFrame.borderFrame or _G["CompactRaidGroup" .. g .. "BorderFrame"]
+            local bf = groupFrame.borderFrame or _G[groupName .. "BorderFrame"]
             if bf then
                 DisableMouseOnDecoration(bf)
                 if border then
@@ -429,8 +442,8 @@ local function ApplyLiveToRaidFrames(w, h, horiz, border, alpha)
 
     -- 2. Single-container / combined raid frames (CompactRaidFrame1..40)
     local shownCombined = {}
-    for i = 1, 40 do
-        local rf = _G["CompactRaidFrame" .. i]
+    for _, name in ipairs(RAID_FRAME_NAMES) do
+        local rf = _G[name]
         if rf then
             rf:SetSize(w, h)
             PassThroughUnitSubframes(rf)
@@ -492,18 +505,35 @@ function ns.GetProfile(mode)
     if not ns.db then
         return PROFILE_DEFAULTS
     end
-    local key = (mode == "raid") and "raid" or (mode == "party" and "party" or ns.GetActiveMode())
-    return ns.db[key] or PROFILE_DEFAULTS
+    if mode ~= "party" and mode ~= "raid" then
+        mode = ns.GetActiveMode()
+    end
+    return ns.db[mode] or PROFILE_DEFAULTS
 end
 
 function ns.SetActiveMode(mode)
     if not ns.db then
         return
     end
-    ns.db.selectedMode = (mode == "raid") and "raid" or "party"
+    mode = (mode == "raid") and "raid" or "party"
+    if ns.db.selectedMode == mode then
+        return
+    end
+    ns.db.selectedMode = mode
     if ns.RefreshOptions then
         ns.RefreshOptions()
     end
+end
+
+-- Returns width, height, horizontal, border, alpha for a profile, snapped to the
+-- same slider ranges the options panel uses.
+local function ResolveLiveProfile(prof, ranges)
+    local opacity = Snap(prof.opacity or ranges.opacity[2], ranges.opacity)
+    return Snap(prof.frameWidth or ranges.width[1], ranges.width),
+        Snap(prof.frameHeight or ranges.height[1], ranges.height),
+        prof.useHorizontalGroups and true or false,
+        prof.displayBorder and true or false,
+        ns.OpacityToAlpha(opacity)
 end
 
 function ns.ApplyLiveVisuals()
@@ -513,38 +543,19 @@ function ns.ApplyLiveVisuals()
 
     local enabled = ns.db.showRaidFramesInGroups and true or false
     local solo = ns.db.showWhenSolo and true or false
-    local inParty = IsInGroup() and not IsInRaid()
     local inRaid = IsInRaid()
-
-    local partyProf = ns.GetProfile("party")
-    local raidProf = ns.GetProfile("raid")
-
-    local rw = Snap(raidProf.frameWidth or RANGES.width[1], RANGES.width)
-    local rh = Snap(raidProf.frameHeight or RANGES.height[1], RANGES.height)
-    local rHoriz = raidProf.useHorizontalGroups and true or false
-    local rBorder = raidProf.displayBorder and true or false
-    local rOpacity = Snap(raidProf.opacity or RANGES.opacity[2], RANGES.opacity)
-    local rAlpha = math.max(0.5, math.min(1.0, rOpacity / 100))
+    local inParty = IsInGroup() and not inRaid
+    local ranges = ns.GetSizeRanges()
 
     -- Apply Raid profile size, orientation, border & opacity to Raid Frames
-    ApplyLiveToRaidFrames(rw, rh, rHoriz, rBorder, rAlpha)
+    ApplyLiveToRaidFrames(ResolveLiveProfile(ns.GetProfile("raid"), ranges))
 
     -- 1. Visibility of CompactPartyFrame vs standard portrait PartyFrame
-    if inRaid then
-        UpdateStandardPartyFramesShown(false)
-    elseif inParty then
-        UpdateStandardPartyFramesShown(not enabled)
-    else
-        UpdateStandardPartyFramesShown(false)
-    end
+    UpdateStandardPartyFramesShown(inParty and not enabled)
 
-    local w = Snap(partyProf.frameWidth or RANGES.width[1], RANGES.width)
-    local h = Snap(partyProf.frameHeight or RANGES.height[1], RANGES.height)
-    local horiz = partyProf.useHorizontalGroups and true or false
-    local border = partyProf.displayBorder and true or false
+    local partyProf = ns.GetProfile("party")
+    local w, h, horiz, border, alpha = ResolveLiveProfile(partyProf, ranges)
     local sortBy = partyProf.sortBy or 0
-    local opacity = Snap(partyProf.opacity or RANGES.opacity[2], RANGES.opacity)
-    local alpha = math.max(0.5, math.min(1.0, opacity / 100))
 
     local cpf = _G["CompactPartyFrame"]
     if not cpf then
@@ -571,8 +582,8 @@ function ns.ApplyLiveVisuals()
 
     -- 2. Collect and sort CompactPartyFrameMember1..5 using C++ GetAttribute("unit")
     local entries = {}
-    for i = 1, 5 do
-        local member = _G["CompactPartyFrameMember" .. i]
+    for i, memberName in ipairs(PARTY_MEMBER_NAMES) do
+        local member = _G[memberName]
         if member then
             PassThroughUnitSubframes(member)
             local unit = member.GetAttribute and member:GetAttribute("unit") or nil
@@ -716,45 +727,15 @@ local function ToRawValue(settingID, displayValue)
         end
         return math.floor(clamped + 0.5)
     end
+    -- No display info available: width, height and opacity are stored as offsets from their minimum.
     local S = Enum.EditModeUnitFrameSetting
-    if settingID == S.FrameWidth then
-        local min, max = RANGES.width[1], RANGES.width[2]
-        displayValue = math.max(min, math.min(max, displayValue))
-        return displayValue - min
-    elseif settingID == S.FrameHeight then
-        local min, max = RANGES.height[1], RANGES.height[2]
-        displayValue = math.max(min, math.min(max, displayValue))
-        return displayValue - min
-    elseif settingID == S.Opacity then
-        local min, max = RANGES.opacity[1], RANGES.opacity[2]
-        displayValue = math.max(min, math.min(max, displayValue))
-        return displayValue - min
+    local range = (settingID == S.FrameWidth and RANGES.width)
+        or (settingID == S.FrameHeight and RANGES.height)
+        or (settingID == S.Opacity and RANGES.opacity)
+    if range then
+        return math.max(range[1], math.min(range[2], displayValue)) - range[1]
     end
     return displayValue
-end
-
-local function ToDisplayValue(settingID, rawValue)
-    if settingID == nil or rawValue == nil then
-        return rawValue
-    end
-    local setup = GetSettingDisplayInfo(settingID)
-    if setup and type(setup.minValue) == "number" and type(setup.maxValue) == "number" then
-        local min, max = setup.minValue, setup.maxValue
-        local display = IsConvertibleSetting(setup) and (rawValue + min) or rawValue
-        return math.max(min, math.min(max, math.floor(display + 0.5)))
-    end
-    local S = Enum.EditModeUnitFrameSetting
-    if settingID == S.FrameWidth then
-        local min, max = RANGES.width[1], RANGES.width[2]
-        return math.max(min, math.min(max, rawValue + min))
-    elseif settingID == S.FrameHeight then
-        local min, max = RANGES.height[1], RANGES.height[2]
-        return math.max(min, math.min(max, rawValue + min))
-    elseif settingID == S.Opacity then
-        local min, max = RANGES.opacity[1], RANGES.opacity[2]
-        return math.max(min, math.min(max, rawValue + min))
-    end
-    return rawValue
 end
 
 local function WrapPresetEntry(entry, defaultName)
@@ -890,74 +871,12 @@ local function CreateOwnLayout(layoutInfo)
     return newIndex
 end
 
--- Reads current Party and Raid Frame settings from the active Edit Mode layout into ns.db.party and ns.db.raid.
-function ns.ReadFromEditMode()
-    if not IsEditModeReady() or not ns.db then
-        return false
-    end
-    local layoutInfo = LoadLayouts()
-    local active = layoutInfo and layoutInfo.layouts[layoutInfo.activeLayout]
-    if not active then
-        return false
-    end
-
-    local S = Enum.EditModeUnitFrameSetting
-
-    local function ReadProfileFromSystem(sys, prof)
-        if not sys or not prof then
-            return
-        end
-        local border = GetRawSystemSetting(sys, S.DisplayBorder)
-        local sortBy = GetRawSystemSetting(sys, S.SortPlayersBy)
-        local auraOrg = GetRawSystemSetting(sys, S.AuraOrganizationType)
-        local rawW = GetRawSystemSetting(sys, S.FrameWidth)
-        local rawH = GetRawSystemSetting(sys, S.FrameHeight)
-        local rawOpacity = GetRawSystemSetting(sys, S.Opacity)
-        local rawBigDef = GetRawSystemSetting(sys, S.BigDefensiveIconSize)
-        local rawBuff = GetRawSystemSetting(sys, S.BuffIconSize)
-        local rawIcon = GetRawSystemSetting(sys, S.DebuffIconSize)
-
-        if border ~= nil then prof.displayBorder = (border == 1) end
-        if sortBy ~= nil then prof.sortBy = sortBy end
-        if auraOrg ~= nil then prof.auraOrganizationType = auraOrg end
-        if rawW ~= nil then prof.frameWidth = ToDisplayValue(S.FrameWidth, rawW) end
-        if rawH ~= nil then prof.frameHeight = ToDisplayValue(S.FrameHeight, rawH) end
-        if rawOpacity ~= nil then prof.opacity = ToDisplayValue(S.Opacity, rawOpacity) end
-        if rawBigDef ~= nil then prof.bigDefensiveSize = ToDisplayValue(S.BigDefensiveIconSize, rawBigDef) end
-        if rawBuff ~= nil then prof.buffSize = ToDisplayValue(S.BuffIconSize, rawBuff) end
-        if rawIcon ~= nil then prof.iconSize = ToDisplayValue(S.DebuffIconSize, rawIcon) end
-    end
-
-    local partySys = FindUnitFrameSystem(active, Enum.EditModeUnitFrameSystemIndices.Party)
-    if partySys then
-        local partyProf = ns.GetProfile("party")
-        local raidStyle = GetRawSystemSetting(partySys, S.UseRaidStylePartyFrames)
-        local horiz = GetRawSystemSetting(partySys, S.UseHorizontalGroups)
-        if raidStyle == 1 then ns.db.showRaidFramesInGroups = true end
-        if horiz ~= nil then partyProf.useHorizontalGroups = (horiz == 1) end
-        ReadProfileFromSystem(partySys, partyProf)
-    end
-
-    if Enum.EditModeUnitFrameSystemIndices.Raid then
-        local raidSys = FindUnitFrameSystem(active, Enum.EditModeUnitFrameSystemIndices.Raid)
-        if raidSys then
-            local raidProf = ns.GetProfile("raid")
-            if S.RaidGroupDisplayType then
-                local dispType = GetRawSystemSetting(raidSys, S.RaidGroupDisplayType)
-                if dispType ~= nil then
-                    raidProf.useHorizontalGroups = (dispType == 1 or dispType == 3)
-                end
-            end
-            ReadProfileFromSystem(raidSys, raidProf)
-        end
-    end
-
-    return true
-end
-
 -- Saves separate Party (ns.db.party) and Raid (ns.db.raid) settings into the active Edit Mode layout.
 function ns.SaveToEditMode()
-    if not IsEditModeReady() or not ns.db then
+    if not ns.db then
+        return false
+    end
+    if not IsEditModeReady() then
         if GetCVarValue and GetCVarValue("useCompactPartyFrames") ~= nil then
             SetCVarValue("useCompactPartyFrames", ns.db.showRaidFramesInGroups and "1" or "0")
             return true
@@ -985,16 +904,17 @@ function ns.SaveToEditMode()
 
     local S = Enum.EditModeUnitFrameSetting
 
+    local D = PROFILE_DEFAULTS
     local function ApplyProfileToSystem(sys, prof)
         SetRawSystemSetting(sys, S.DisplayBorder, prof.displayBorder and 1 or 0)
-        SetRawSystemSetting(sys, S.SortPlayersBy, prof.sortBy or 0)
-        SetRawSystemSetting(sys, S.AuraOrganizationType, prof.auraOrganizationType or 0)
-        SetRawSystemSetting(sys, S.FrameWidth, ToRawValue(S.FrameWidth, prof.frameWidth or 72))
-        SetRawSystemSetting(sys, S.FrameHeight, ToRawValue(S.FrameHeight, prof.frameHeight or 36))
-        SetRawSystemSetting(sys, S.Opacity, ToRawValue(S.Opacity, prof.opacity or 100))
-        SetRawSystemSetting(sys, S.BigDefensiveIconSize, ToRawValue(S.BigDefensiveIconSize, prof.bigDefensiveSize or 100))
-        SetRawSystemSetting(sys, S.BuffIconSize, ToRawValue(S.BuffIconSize, prof.buffSize or 100))
-        SetRawSystemSetting(sys, S.DebuffIconSize, ToRawValue(S.DebuffIconSize, prof.iconSize or 100))
+        SetRawSystemSetting(sys, S.SortPlayersBy, prof.sortBy or D.sortBy)
+        SetRawSystemSetting(sys, S.AuraOrganizationType, prof.auraOrganizationType or D.auraOrganizationType)
+        SetRawSystemSetting(sys, S.FrameWidth, ToRawValue(S.FrameWidth, prof.frameWidth or D.frameWidth))
+        SetRawSystemSetting(sys, S.FrameHeight, ToRawValue(S.FrameHeight, prof.frameHeight or D.frameHeight))
+        SetRawSystemSetting(sys, S.Opacity, ToRawValue(S.Opacity, prof.opacity or D.opacity))
+        SetRawSystemSetting(sys, S.BigDefensiveIconSize, ToRawValue(S.BigDefensiveIconSize, prof.bigDefensiveSize or D.bigDefensiveSize))
+        SetRawSystemSetting(sys, S.BuffIconSize, ToRawValue(S.BuffIconSize, prof.buffSize or D.buffSize))
+        SetRawSystemSetting(sys, S.DebuffIconSize, ToRawValue(S.DebuffIconSize, prof.iconSize or D.iconSize))
     end
 
     local uiTop = UIParent and UIParent.GetTop and UIParent:GetTop() or nil
@@ -1053,10 +973,6 @@ end
 ---------------------------------------------------------------------------
 -- Public API for Options UI & Slash Commands
 ---------------------------------------------------------------------------
-function ns.SupportsSize()
-    return true
-end
-
 function ns.GetSize(mode)
     local prof = ns.GetProfile(mode)
     return prof and prof.frameWidth or RANGES.width[1],
@@ -1111,8 +1027,8 @@ function ns.CommitChanges(quiet)
         local label = (mode == "raid") and "Raid Frames" or "Party Frames"
         ns.Print(("Applied to %s (%d x %d, %s)"):format(
             label,
-            prof.frameWidth or 72,
-            prof.frameHeight or 36,
+            prof.frameWidth or PROFILE_DEFAULTS.frameWidth,
+            prof.frameHeight or PROFILE_DEFAULTS.frameHeight,
             prof.useHorizontalGroups and "Horizontal" or "Vertical"))
     end
     if ns.RefreshOptions then
@@ -1129,7 +1045,7 @@ end
 function ns.SetEnabled(value)
     ns.db.showRaidFramesInGroups = value and true or false
     ns.CommitChanges(true)
-    ns.Print("Show raid frames in groups: " .. (ns.db.showRaidFramesInGroups and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+    ns.Print("Show raid frames in groups: " .. OnOff(ns.db.showRaidFramesInGroups))
 end
 
 function ns.SetOption(key, value)
@@ -1142,16 +1058,24 @@ function ns.SetOption(key, value)
     ns.CommitChanges(true)
 end
 
-function ns.ResetPosition(mode)
-    mode = mode or ns.GetActiveMode()
-    local posKey = (mode == "raid") and "raidPos" or "partyPos"
+function ns.ToggleShowWhenSolo()
+    ns.SetOption("showWhenSolo", not ns.db.showWhenSolo)
+    ns.Print("Show frames when solo: " .. OnOff(ns.db.showWhenSolo))
+end
+
+-- Forgets the Ctrl-dragged position for a mode so Blizzard's default anchor applies again.
+local function ClearSavedPosition(mode)
     if ns.db then
-        ns.db[posKey] = nil
+        ns.db[(mode == "raid") and "raidPos" or "partyPos"] = nil
     end
     local target = (mode == "raid") and _G["CompactRaidFrameContainer"] or _G["CompactPartyFrame"]
     if target then
         target:ClearAllPoints()
     end
+end
+
+function ns.ResetPosition(mode)
+    ClearSavedPosition(mode or ns.GetActiveMode())
     ns.ApplyLiveVisuals()
     ns.Print("Position reset to default.")
 end
@@ -1161,15 +1085,7 @@ function ns.ResetSize()
     for key, value in pairs(PROFILE_DEFAULTS) do
         prof[key] = value
     end
-    local mode = ns.GetActiveMode()
-    local posKey = (mode == "raid") and "raidPos" or "partyPos"
-    if ns.db then
-        ns.db[posKey] = nil
-    end
-    local target = (mode == "raid") and _G["CompactRaidFrameContainer"] or _G["CompactPartyFrame"]
-    if target then
-        target:ClearAllPoints()
-    end
+    ClearSavedPosition(ns.GetActiveMode())
     ns.CommitChanges(false)
 end
 
@@ -1289,7 +1205,7 @@ end)
 ---------------------------------------------------------------------------
 -- Slash commands
 ---------------------------------------------------------------------------
-local HELP = "/srf - open config window | on | off | solo | width <n> | height <n> | size <w> <h> | reset | resetpos"
+local HELP = "/srf - open config window | on | off | toggle | solo | width <n> | height <n> | size <w> <h> | reset | resetpos"
 
 local function HandleSlash(msg)
     msg = strlower(strtrim(msg or ""))
@@ -1301,8 +1217,7 @@ local function HandleSlash(msg)
     elseif cmd == "toggle" then
         ns.SetEnabled(not ns.db.showRaidFramesInGroups)
     elseif cmd == "solo" then
-        ns.SetOption("showWhenSolo", not ns.db.showWhenSolo)
-        ns.Print("Show frames when solo: " .. (ns.db.showWhenSolo and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+        ns.ToggleShowWhenSolo()
     elseif cmd == "resetpos" then
         ns.ResetPosition()
     elseif cmd == "width" and tonumber(arg1) then
