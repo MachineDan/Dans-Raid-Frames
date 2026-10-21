@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="media/logo.webp" alt="Dan's Raid Frames logo" width="320">
+  <img src="media/dans-raid-frames-logo.webp" alt="Dan's Raid Frames logo" width="320">
 </p>
 
 # Dan's Raid Frames
