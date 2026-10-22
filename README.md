@@ -24,12 +24,13 @@ Dan's Raid Frames doesn't replace the default frames. It gives you one place to 
 
 ## Installation
 
-1. Download the latest version: **Code → Download ZIP** on this page.
-2. Extract it into your AddOns folder, for example
-   `World of Warcraft\_retail_\Interface\AddOns\`.
-3. **Rename the folder to `DansRaidFrames`**. GitHub names it after the repository plus `-main`,
-   and WoW only loads the addon if the folder matches its name.
-4. Restart the game or type `/reload`.
+1. Download **`DansRaidFrames-x.y.z.zip`** from the [latest release](https://github.com/MachineDan/Dans-Raid-Frames/releases/latest)
+   (not the "Source code" downloads, and not **Code → Download ZIP**).
+2. Open the zip and drag the **`DansRaidFrames`** folder inside it into your AddOns folder, for example
+   `World of Warcraft\_retail_\Interface\AddOns\`. You should end up with `AddOns\DansRaidFrames\DansRaidFrames.toc`.
+3. Restart the game or type `/reload`.
+
+Or install it through the CurseForge app, which does all of this for you.
 
 ## Usage
 
