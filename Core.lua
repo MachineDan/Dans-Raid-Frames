@@ -158,9 +158,23 @@ function ns.GetAbsoluteIconSize(prof, key)
     local range = ns.GetSizeRanges()[key]
     local relative = prof[key] or PROFILE_DEFAULTS[key]
     local wanted = relative * ns.GetComponentScale(prof)
-    local absolute = Snap(wanted, range)
-    local capped = wanted > range[2] + range[3] / 2 or wanted < range[1] - range[3] / 2
+    local absolute, capped = Snap(wanted, range), wanted > range[2] + range[3] / 2 or wanted < range[1] - range[3] / 2
     return absolute, capped
+end
+
+-- Slider limits for the relative Buff/Icon Size at this frame size: Blizzard's 50%..200% divided by how
+-- much bigger than native the frame is, so the whole slider does something (144 x 72 frames: 25%..100%).
+local RELATIVE_ICON_STEP = 5
+function ns.GetRelativeIconRange(prof, key)
+    local range = ns.GetSizeRanges()[key]
+    local scale = ns.GetComponentScale(prof)
+    local step = RELATIVE_ICON_STEP
+    local min = math.ceil(range[1] / scale / step - 1e-6) * step
+    local max = math.floor(range[2] / scale / step + 1e-6) * step
+    if max < min then
+        max = min
+    end
+    return { min, max, step }
 end
 
 function ns.OpacityToAlpha(opacity)
@@ -954,7 +968,9 @@ function ns.StageOption(key, value)
         return
     end
     local ranges = ns.GetSizeRanges()
-    if ranges[key] and type(value) == "number" then
+    if (key == "buffSize" or key == "iconSize") and type(value) == "number" then
+        value = Snap(value, ns.GetRelativeIconRange(ns.GetProfile(), key))
+    elseif ranges[key] and type(value) == "number" then
         value = Snap(value, ranges[key])
     end
     if GLOBAL_KEYS[key] then
@@ -1228,6 +1244,57 @@ local function PrintDebugInfo()
     end
     if shown == 0 then
         DEFAULT_CHAT_FRAME:AddMessage("  no party frames shown (join a group, or right-click > Unlock Frames while solo)")
+    end
+
+    -- Icon sizes: what we ask Edit Mode for vs. what the frames were last set up with (Blizzard copies
+    -- its sizes into these attributes in DefaultCompactUnitFrameSetup). Also kept in SavedVariables as
+    -- DansRaidFramesDB.debugSnapshot so it can be read outside the game after /reload or logout.
+    local snapshot = { time = date and date("%Y-%m-%d %H:%M:%S") or "?", modes = {}, frames = {} }
+    for _, mode in ipairs({ "party", "raid" }) do
+        local p = ns.GetProfile(mode)
+        local buffAbs, buffCapped = ns.GetAbsoluteIconSize(p, "buffSize")
+        local iconAbs, iconCapped = ns.GetAbsoluteIconSize(p, "iconSize")
+        snapshot.modes[mode] = {
+            frame = ("%sx%s"):format(tostring(p.frameWidth), tostring(p.frameHeight)),
+            componentScale = ns.GetComponentScale(p),
+            buffRelative = p.buffSize, buffAbsolute = buffAbs, buffCapped = buffCapped,
+            iconRelative = p.iconSize, iconAbsolute = iconAbs, iconCapped = iconCapped,
+            bigDefensive = p.bigDefensiveSize,
+            -- What Blizzard should hand the frames, in pixels (11 px auras, 22 px big defensive).
+            expectBuffPx = 11 * buffAbs / 100, expectDebuffPx = 11 * iconAbs / 100,
+            expectBigDefPx = 22 * ns.GetComponentScale(p) * (p.bigDefensiveSize or 100) / 100,
+        }
+        DEFAULT_CHAT_FRAME:AddMessage(("  %s: buff %s%% -> %d%% (%.1f px), icon %s%% -> %d%% (%.1f px)"):format(
+            mode, tostring(p.buffSize), buffAbs, 11 * buffAbs / 100, tostring(p.iconSize), iconAbs, 11 * iconAbs / 100))
+    end
+    local function Record(name)
+        local f = _G[name]
+        if f and f:IsShown() and f.GetAttribute then
+            local row = {
+                name = name,
+                size = ("%.1fx%.1f"):format(f:GetWidth(), f:GetHeight()),
+                debuffSize = f:GetAttribute("debuff-size"),
+                buffSize = f:GetAttribute("buff-size"),
+                bigDefensiveSize = f:GetAttribute("big-defensive-size"),
+            }
+            snapshot.frames[#snapshot.frames + 1] = row
+            DEFAULT_CHAT_FRAME:AddMessage(("  %s %s: buff %s px, debuff %s px, big def %s px"):format(
+                name, row.size, tostring(row.buffSize), tostring(row.debuffSize), tostring(row.bigDefensiveSize)))
+        end
+    end
+    for _, name in ipairs(PARTY_MEMBER_NAMES) do
+        Record(name)
+    end
+    for g = 1, 8 do
+        for _, name in ipairs(RAID_GROUP_MEMBER_NAMES[g]) do
+            Record(name)
+        end
+    end
+    for _, name in ipairs(RAID_FRAME_NAMES) do
+        Record(name)
+    end
+    if ns.db then
+        ns.db.debugSnapshot = snapshot
     end
 end
 

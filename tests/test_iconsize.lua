@@ -61,7 +61,7 @@ SlashCmdList = {}
 hooksecurefunc = noop
 InCombatLockdown = function() return true end -- skips live frame layout, not under test
 C_CVar = { GetCVar = noop, SetCVar = noop }
-strlower, strtrim, strsplit = string.lower, function(s) return s end, noop
+strlower, strtrim = string.lower, function(s) return s end; strsplit = function(_, s) return s:match("^(%S*)%s*(%S*)%s*(%S*)") end
 unpack = unpack or table.unpack
 
 local ns = {}
@@ -128,6 +128,16 @@ Check(P(72, 36, 50, 50))
 -- The user's own saved profile.
 Check({ frameWidth = 144, frameHeight = 72, opacity = 100, bigDefensiveSize = 95, buffSize = 70, iconSize = 70,
     sortBy = 0, auraOrganizationType = 0 })
+
+-- Relative slider limits follow the frame so the whole slider changes something.
+for _, c in ipairs({ { 72, 36, 50, 200 }, { 144, 72, 25, 100 }, { 108, 54, 35, 130 }, { 144, 36, 50, 200 } }) do
+    local r = ns.GetRelativeIconRange({ frameWidth = c[1], frameHeight = c[2] }, "iconSize")
+    checks = checks + 1
+    if r[1] ~= c[3] or r[2] ~= c[4] then
+        failures = failures + 1
+        print(("FAIL range at %dx%d: %d..%d, expected %d..%d"):format(c[1], c[2], r[1], r[2], c[3], c[4]))
+    end
+end
 
 print(("%d/%d settings round-trip correctly"):format(checks - failures, checks))
 os.exit(failures == 0 and 0 or 1)
