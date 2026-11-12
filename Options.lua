@@ -512,12 +512,16 @@ local function CreatePreviewBox(parent, fixedMode)
         local opacity = (prof and prof.opacity) or 100
         unitFrame:SetAlpha(ns.OpacityToAlpha(opacity))
 
+        -- Same sizes Blizzard draws (DefaultCompactUnitFrameSetup): 11 px auras times the absolute
+        -- Edit Mode size, and a 22 px big defensive that already grows with the frame.
         local bigDefScale = ((prof and prof.bigDefensiveSize) or 100) / 100
-        local buffScale = ((prof and prof.buffSize) or 100) / 100
-        local iconScale = ((prof and prof.iconSize) or 100) / 100
+        local buffScale = (prof and ns.GetAbsoluteIconSize(prof, "buffSize") or 100) / 100
+        local iconScale = (prof and ns.GetAbsoluteIconSize(prof, "iconSize") or 100) / 100
+        local componentScale = prof and ns.GetComponentScale(prof) or 1
         local auraOrg = (prof and prof.auraOrganizationType) or 0
 
-        bigDefIcon:SetSize(math.floor(18 * bigDefScale + 0.5), math.floor(18 * bigDefScale + 0.5))
+        local bdSize = math.floor(22 * componentScale * bigDefScale + 0.5)
+        bigDefIcon:SetSize(bdSize, bdSize)
 
         local bSize = math.floor(11 * buffScale + 0.5)
         buff1:SetSize(bSize, bSize)
@@ -788,7 +792,14 @@ local function BuildModePanel(panel, mode)
         return CreateStockSlider(panel, labelText, "%", function(value)
             ns.SetActiveMode(mode)
             ns.StageOption(key, value)
-            statusText:SetText(("|cff00ff00%s: %d%%|r"):format(statusLabel, value))
+            local status = ("|cff00ff00%s: %d%%|r"):format(statusLabel, value)
+            if key == "buffSize" or key == "iconSize" then
+                local absolute, capped = ns.GetAbsoluteIconSize(ns.GetProfile(mode), key)
+                if capped then
+                    status = status .. ("|cffffd100 (Blizzard's limit: %d%% at this frame size)|r"):format(absolute)
+                end
+            end
+            statusText:SetText(status)
         end, CommitSlider)
     end
 

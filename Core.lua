@@ -137,6 +137,32 @@ local function Snap(value, range)
     return min + math.floor((value - min) / step + 0.5) * step
 end
 
+-- Blizzard's native raid frame size (NATIVE_UNIT_FRAME_WIDTH/HEIGHT in CompactUnitFrame.lua).
+local NATIVE_FRAME_WIDTH, NATIVE_FRAME_HEIGHT = 72, 36
+
+-- Blizzard's "component scale": how much bigger than native the frame is. Blizzard already applies it
+-- to the big defensive icon, but draws buff and debuff icons at 11 px * their slider, whatever the frame
+-- size. So at 144 x 72 a 200% icon looks like 100% on a native frame.
+function ns.GetComponentScale(prof)
+    prof = prof or ns.GetProfile()
+    local w = prof.frameWidth or NATIVE_FRAME_WIDTH
+    local h = prof.frameHeight or NATIVE_FRAME_HEIGHT
+    return math.min(w / NATIVE_FRAME_WIDTH, h / NATIVE_FRAME_HEIGHT)
+end
+
+-- Our Buff and Icon Size sliders are relative to the frame: 100% keeps the native icon-to-frame
+-- ratio at any frame size. Returns the absolute percentage Edit Mode needs, snapped to its slider
+-- steps, and whether Blizzard's limits cut it short.
+function ns.GetAbsoluteIconSize(prof, key)
+    prof = prof or ns.GetProfile()
+    local range = ns.GetSizeRanges()[key]
+    local relative = prof[key] or PROFILE_DEFAULTS[key]
+    local wanted = relative * ns.GetComponentScale(prof)
+    local absolute = Snap(wanted, range)
+    local capped = wanted > range[2] + range[3] / 2 or wanted < range[1] - range[3] / 2
+    return absolute, capped
+end
+
 function ns.OpacityToAlpha(opacity)
     return math.max(0.5, math.min(1.0, opacity / 100))
 end
@@ -836,8 +862,9 @@ function ns.SaveToEditMode()
         SetRawSystemSetting(sys, S.FrameHeight, ToRawValue(S.FrameHeight, prof.frameHeight or D.frameHeight))
         SetRawSystemSetting(sys, S.Opacity, ToRawValue(S.Opacity, prof.opacity or D.opacity))
         SetRawSystemSetting(sys, S.BigDefensiveIconSize, ToRawValue(S.BigDefensiveIconSize, prof.bigDefensiveSize or D.bigDefensiveSize))
-        SetRawSystemSetting(sys, S.BuffIconSize, ToRawValue(S.BuffIconSize, prof.buffSize or D.buffSize))
-        SetRawSystemSetting(sys, S.DebuffIconSize, ToRawValue(S.DebuffIconSize, prof.iconSize or D.iconSize))
+        -- Buff/Icon Size are relative to the frame size; Edit Mode wants the absolute size.
+        SetRawSystemSetting(sys, S.BuffIconSize, ToRawValue(S.BuffIconSize, (ns.GetAbsoluteIconSize(prof, "buffSize"))))
+        SetRawSystemSetting(sys, S.DebuffIconSize, ToRawValue(S.DebuffIconSize, (ns.GetAbsoluteIconSize(prof, "iconSize"))))
     end
 
     local uiTop = UIParent and UIParent.GetTop and UIParent:GetTop() or nil

@@ -84,7 +84,17 @@ local function Check(prof)
         for _, s in ipairs(sys.settings) do
             if s.setting == setup.setting then raw = s.value end
         end
-        local want = prof[PROFILE_KEY[setup.setting]]
+        local key = PROFILE_KEY[setup.setting]
+        local want = prof[key]
+        if key == "buffSize" or key == "iconSize" then
+            -- Relative to the frame: native 72x36 is 1x, Blizzard caps at 50..200 in steps of 10.
+            local scale = math.min(prof.frameWidth / 72, prof.frameHeight / 36)
+            local abs = math.max(50, math.min(200, want * scale))
+            want = 50 + math.floor((abs - 50) / 10 + 0.5) * 10
+        end
+        if prof.expect and prof.expect[key] then
+            assert(want == prof.expect[key], ("test expectation for %s: model says %d, expected %d"):format(key, want, prof.expect[key]))
+        end
         local got = setup.ConvertValue(setup, raw, true)
         checks = checks + 1
         if got ~= want or raw ~= math.floor(raw) then
@@ -103,6 +113,18 @@ for v = 50, 100, 5 do
     Check({ frameWidth = 72, frameHeight = 36, opacity = v, bigDefensiveSize = v,
         buffSize = 100, iconSize = 100, sortBy = 0, auraOrganizationType = 0 })
 end
+-- Icons keep their ratio to the frame (hand-computed expectations).
+local function P(w, h, rel, expect)
+    return { frameWidth = w, frameHeight = h, opacity = 100, bigDefensiveSize = 100, buffSize = rel, iconSize = rel,
+        sortBy = 0, auraOrganizationType = 0, expect = { buffSize = expect, iconSize = expect } }
+end
+Check(P(72, 36, 100, 100))   -- native frame: unchanged
+Check(P(144, 72, 100, 200))  -- double frame: double icons
+Check(P(108, 54, 100, 150))  -- 1.5x frame
+Check(P(144, 72, 70, 140))   -- the user's party frames at 70%
+Check(P(144, 72, 150, 200))  -- capped by Blizzard's 200% max
+Check(P(144, 36, 100, 100))  -- only wider: Blizzard scales by the smaller ratio
+Check(P(72, 36, 50, 50))
 -- The user's own saved profile.
 Check({ frameWidth = 144, frameHeight = 72, opacity = 100, bigDefensiveSize = 95, buffSize = 70, iconSize = 70,
     sortBy = 0, auraOrganizationType = 0 })
