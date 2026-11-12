@@ -31,11 +31,13 @@ local PROFILE_DEFAULTS = {
 local DEFAULTS = {
     selectedMode = "party", -- "party" or "raid"
     showRaidFramesInGroups = true,
+    showMissingBuff = true, -- red-bordered class buff icon on members missing it (Buffs.lua)
 }
 
 local GLOBAL_KEYS = {
     selectedMode = true,
     showRaidFramesInGroups = true,
+    showMissingBuff = true,
     partyPos = true,
     raidPos = true,
 }

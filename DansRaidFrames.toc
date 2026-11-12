@@ -16,4 +16,5 @@
 
 Options.lua
 Core.lua
+Buffs.lua
 Movers.lua

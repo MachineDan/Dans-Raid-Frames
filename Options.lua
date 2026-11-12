@@ -763,9 +763,19 @@ local function BuildModePanel(panel, mode)
     end)
     cbBorder:SetPoint("TOPLEFT", templateDropdown, "BOTTOMLEFT", 0, ROW_GAP)
 
+    -- Shared by party and raid: Blizzard hides long class buffs, so mark who is missing yours.
+    local cbMissingBuff = CreateStockCheckbox(panel, "Show Missing Class Buff", function(checked)
+        ns.db.showMissingBuff = checked and true or false
+        if ns.UpdateBuffMarkers then
+            ns.UpdateBuffMarkers()
+        end
+        ShowSavedStatus()
+    end)
+    cbMissingBuff:SetPoint("TOPLEFT", cbBorder, "BOTTOMLEFT", 0, ROW_GAP)
+
     -- Section 3: Size & Opacity
     local sizeHeader = CreateSectionHeader(panel, "Size & Opacity — " .. modeLabel)
-    sizeHeader:SetPoint("TOPLEFT", cbBorder, "BOTTOMLEFT", 0, SECTION_GAP)
+    sizeHeader:SetPoint("TOPLEFT", cbMissingBuff, "BOTTOMLEFT", 0, SECTION_GAP)
 
     local function CommitSlider()
         ns.SetActiveMode(mode)
@@ -869,6 +879,7 @@ local function BuildModePanel(panel, mode)
         sortDropdown:Refresh()
         templateDropdown:Refresh()
         cbBorder:SetChecked(prof.displayBorder)
+        cbMissingBuff:SetChecked(ns.db.showMissingBuff and true or false)
 
         widthSlider:SetRange(unpack(ranges.width))
         heightSlider:SetRange(unpack(ranges.height))
