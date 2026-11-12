@@ -1,14 +1,33 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 (2026-11-12)
+
+See at a glance who's missing your buffs, and icon sizes that finally do what the slider says.
+
+### New: missing class buff marker
+Blizzard's raid frames never show long class buffs like Power Word: Fortitude, so there was no easy way to tell who still needs one. Now anyone missing **your** buff gets its icon with a red border in the top-right corner of their frame, and it disappears as soon as they're buffed.
+
+- **Priest:** Power Word: Fortitude, and Divine Spirit on mana users if you have it.
+- **Mage:** Arcane Intellect, on mana users.
+- **Druid:** Mark of the Wild.
+- **Paladin:** any of your Blessings. Someone who only has another paladin's blessing still gets marked, and the icon shows the blessing you cast last.
+
+Group versions (Prayer of Fortitude, Arcane Brilliance, Gift of the Wild, Greater Blessings) count too. If someone is missing several of your buffs, the icons line up side by side. Dead and offline players are skipped. Short or range-based buffs like Battle Shout, totems and auras are left out on purpose, so the marker doesn't flicker.
+
+Markers hide in combat, when the game doesn't let addons read buffs, and come back afterwards. Turn them off with **Show Missing Class Buff** in `/drf`.
+
+### Icon sizes now follow your frames
+- **Buff and Icon Size grow with the frame**, like Blizzard's Big Defensive already does. 100% keeps the default icon-to-frame ratio at any size, so bigger frames mean bigger icons.
+- **The sliders stop at Blizzard's limit** for your frame size (it caps icons at 200%): 25–100% on 144 x 72 frames, 50–200% on default-size frames. Every step now changes something.
+- **The preview** draws icons at the same size as the real frames.
 
 ### Fixes
-- **Big Defensive, Buff and Icon Size now change the real frames**, not just the preview. These sizes were saved into Edit Mode in the wrong format, so any size above 50% showed up at the maximum. Open `/drf` and click **Apply** once to rewrite sizes saved by 1.0.0.
+- **Big Defensive, Buff and Icon Size now change the real frames**, not just the preview. 1.0.0 saved these sizes into Edit Mode in the wrong format, so anything above 50% showed up at the maximum.
 
-### Changes
-- **Missing class buff marker:** Blizzard's raid frames never show long class buffs like Power Word: Fortitude, so anyone missing yours now gets that buff's icon with a red border in the top-right corner of their frame. Works for Priest (Fortitude, plus Divine Spirit on mana users if talented), Mage (Arcane Intellect, mana users only), Druid (Mark of the Wild) and Paladin (any of your Blessings: someone with only another paladin's blessing still gets marked, and the icon shows the blessing you cast last); the group versions count too. Several missing buffs show side by side. Short or range-based buffs (Battle Shout, totems, auras) are left out. Hidden in combat, when the game doesn't let addons read buffs. Toggle: **Show Missing Class Buff** in `/drf`.
-- **Buff and Icon Size now grow with the frame**, like Blizzard's Big Defensive already does: 100% keeps the default icon-to-frame ratio at any frame size, so making the frames bigger makes the icons bigger too. Blizzard caps icons at 200%, so the Buff and Icon Size sliders now stop where that limit is reached: 25%–100% on 144 x 72 frames, 50%–200% on default-size frames.
-- The preview's icons now match the real frames' sizes.
+### Updating from 1.0.0
+- **Restart the game** after installing: 1.1.0 adds a new file, and `/reload` doesn't load new files.
+- Open `/drf` and click **Apply** once, to rewrite the icon sizes 1.0.0 saved incorrectly.
+- Buff and Icon Size are now relative to the frame, so on frames bigger than default the same percentage gives bigger icons than before. Adjust them if they look too big.
 
 ## 1.0.0 (2026-10-22)
 

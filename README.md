@@ -19,6 +19,10 @@ Dan's Raid Frames doesn't replace the default frames. It gives you one place to 
   left, centered or right (top, center or bottom when vertical). A 2-player group stays centered.
 - **Works with Edit Mode:** settings and positions are saved into your active Edit Mode layout,
   so Edit Mode and Dan's Raid Frames always agree.
+- **Icons that scale with your frames:** buff and debuff icons keep their size relative to the frame,
+  so bigger frames get bigger icons.
+- **Missing class buff marker:** Blizzard's frames hide long class buffs like Fortitude, so anyone
+  missing yours (Priest, Mage, Druid, Paladin) gets that buff's icon with a red border. Hidden in combat.
 - **Shortcut to Blizzard's Raid Frame options** (power bars, class colors, debuffs, health text…),
   so those aren't duplicated.
 
