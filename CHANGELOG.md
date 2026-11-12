@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+- **Big Defensive, Buff and Icon Size now change the real frames**, not just the preview. These sizes were saved into Edit Mode in the wrong format, so any size above 50% showed up at the maximum. Open `/drf` and click **Apply** once to rewrite sizes saved by 1.0.0.
+
 ## 1.0.0 (2026-10-22)
 
 First release of **Dan's Raid Frames**: quick controls for Blizzard's party and raid frames.

@@ -48,7 +48,7 @@ local RANGES = {
     width = { 72, 144, 2 },
     height = { 36, 72, 2 },
     opacity = { 50, 100, 1 },
-    bigDefensiveSize = { 50, 200, 10 },
+    bigDefensiveSize = { 50, 100, 5 },
     buffSize = { 50, 200, 10 },
     iconSize = { 50, 200, 10 },
 }
@@ -655,16 +655,15 @@ local function DeepCopy(src, seen)
     return dst
 end
 
--- Converts between human-readable display values and raw Edit Mode stored integers
--- without calling any Blizzard Lua methods on EditModeSettingDisplayInfoMixin.
-local function IsConvertibleSetting(setup)
-    if not setup or type(setup.minValue) ~= "number" or type(setup.maxValue) ~= "number" then
-        return false
-    end
-    if EditModeSettingDisplayInfoMixin and setup.ConvertValue == EditModeSettingDisplayInfoMixin.ConvertValueDefault then
-        return false
-    end
-    return true
+-- Converts human-readable display values to the raw integers Edit Mode stores, mirroring
+-- Blizzard's converters in EditModeSettingDisplayInfo.lua without calling them:
+--   ConvertValueDiffFromMin (frame width/height): raw = value - min
+--   ConvertValueDefault (opacity, icon sizes):    raw = (value - min) / step
+-- Icon sizes use step 10 (big defensive: 5), so 70% must be stored as 2, not 20: Blizzard
+-- decodes raw * step + min, and a raw 20 would come back as 250%, clamped to the maximum.
+local function StoredAsDiffFromMin(settingID)
+    local S = Enum.EditModeUnitFrameSetting
+    return settingID == S.FrameWidth or settingID == S.FrameHeight
 end
 
 local function ToRawValue(settingID, displayValue)
@@ -672,23 +671,31 @@ local function ToRawValue(settingID, displayValue)
         return displayValue
     end
     local setup = GetSettingDisplayInfo(settingID)
+    local min, max, step
     if setup and type(setup.minValue) == "number" and type(setup.maxValue) == "number" then
-        local min, max = setup.minValue, setup.maxValue
-        local clamped = math.max(min, math.min(max, displayValue))
-        if IsConvertibleSetting(setup) then
-            return math.floor(clamped - min + 0.5)
+        min, max, step = setup.minValue, setup.maxValue, setup.stepSize
+    else
+        -- No display info available: fall back to our copy of Blizzard's slider limits.
+        local S = Enum.EditModeUnitFrameSetting
+        local range = (settingID == S.FrameWidth and RANGES.width)
+            or (settingID == S.FrameHeight and RANGES.height)
+            or (settingID == S.Opacity and RANGES.opacity)
+            or (settingID == S.BigDefensiveIconSize and RANGES.bigDefensiveSize)
+            or (settingID == S.BuffIconSize and RANGES.buffSize)
+            or (settingID == S.DebuffIconSize and RANGES.iconSize)
+        if not range then
+            return displayValue
         end
-        return math.floor(clamped + 0.5)
+        min, max, step = range[1], range[2], range[3]
     end
-    -- No display info available: width, height and opacity are stored as offsets from their minimum.
-    local S = Enum.EditModeUnitFrameSetting
-    local range = (settingID == S.FrameWidth and RANGES.width)
-        or (settingID == S.FrameHeight and RANGES.height)
-        or (settingID == S.Opacity and RANGES.opacity)
-    if range then
-        return math.max(range[1], math.min(range[2], displayValue)) - range[1]
+    local clamped = math.max(min, math.min(max, displayValue))
+    if StoredAsDiffFromMin(settingID) then
+        return math.floor(clamped - min + 0.5)
     end
-    return displayValue
+    if type(step) ~= "number" or step <= 0 then
+        step = 1
+    end
+    return math.floor((clamped - min) / step + 0.5)
 end
 
 -- Builds the same combined list EditModeManagerFrameMixin:UpdateLayoutInfo uses (and passes to
